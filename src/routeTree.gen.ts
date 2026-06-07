@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TestRouteImport } from './routes/test'
 import { Route as ConversationsRouteImport } from './routes/conversations'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LeadsIndexRouteImport } from './routes/leads.index'
@@ -16,8 +17,15 @@ import { Route as LeadsNewRouteImport } from './routes/leads.new'
 import { Route as LeadsLeadIdRouteImport } from './routes/leads.$leadId'
 import { Route as BikesNewRouteImport } from './routes/bikes.new'
 import { Route as BikesBikeIdEditRouteImport } from './routes/bikes.$bikeId.edit'
+import { Route as ApiTestSimulateRouteImport } from './routes/api/test/simulate'
+import { Route as ApiTestSeedRouteImport } from './routes/api/test/seed'
 import { Route as ApiPublicWhatsappWebhookRouteImport } from './routes/api/public/whatsapp.webhook'
 
+const TestRoute = TestRouteImport.update({
+  id: '/test',
+  path: '/test',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ConversationsRoute = ConversationsRouteImport.update({
   id: '/conversations',
   path: '/conversations',
@@ -53,6 +61,16 @@ const BikesBikeIdEditRoute = BikesBikeIdEditRouteImport.update({
   path: '/bikes/$bikeId/edit',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiTestSimulateRoute = ApiTestSimulateRouteImport.update({
+  id: '/api/test/simulate',
+  path: '/api/test/simulate',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTestSeedRoute = ApiTestSeedRouteImport.update({
+  id: '/api/test/seed',
+  path: '/api/test/seed',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicWhatsappWebhookRoute =
   ApiPublicWhatsappWebhookRouteImport.update({
     id: '/api/public/whatsapp/webhook',
@@ -63,20 +81,26 @@ const ApiPublicWhatsappWebhookRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/conversations': typeof ConversationsRoute
+  '/test': typeof TestRoute
   '/bikes/new': typeof BikesNewRoute
   '/leads/$leadId': typeof LeadsLeadIdRoute
   '/leads/new': typeof LeadsNewRoute
   '/leads/': typeof LeadsIndexRoute
+  '/api/test/seed': typeof ApiTestSeedRoute
+  '/api/test/simulate': typeof ApiTestSimulateRoute
   '/bikes/$bikeId/edit': typeof BikesBikeIdEditRoute
   '/api/public/whatsapp/webhook': typeof ApiPublicWhatsappWebhookRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/conversations': typeof ConversationsRoute
+  '/test': typeof TestRoute
   '/bikes/new': typeof BikesNewRoute
   '/leads/$leadId': typeof LeadsLeadIdRoute
   '/leads/new': typeof LeadsNewRoute
   '/leads': typeof LeadsIndexRoute
+  '/api/test/seed': typeof ApiTestSeedRoute
+  '/api/test/simulate': typeof ApiTestSimulateRoute
   '/bikes/$bikeId/edit': typeof BikesBikeIdEditRoute
   '/api/public/whatsapp/webhook': typeof ApiPublicWhatsappWebhookRoute
 }
@@ -84,10 +108,13 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/conversations': typeof ConversationsRoute
+  '/test': typeof TestRoute
   '/bikes/new': typeof BikesNewRoute
   '/leads/$leadId': typeof LeadsLeadIdRoute
   '/leads/new': typeof LeadsNewRoute
   '/leads/': typeof LeadsIndexRoute
+  '/api/test/seed': typeof ApiTestSeedRoute
+  '/api/test/simulate': typeof ApiTestSimulateRoute
   '/bikes/$bikeId/edit': typeof BikesBikeIdEditRoute
   '/api/public/whatsapp/webhook': typeof ApiPublicWhatsappWebhookRoute
 }
@@ -96,30 +123,39 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/conversations'
+    | '/test'
     | '/bikes/new'
     | '/leads/$leadId'
     | '/leads/new'
     | '/leads/'
+    | '/api/test/seed'
+    | '/api/test/simulate'
     | '/bikes/$bikeId/edit'
     | '/api/public/whatsapp/webhook'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/conversations'
+    | '/test'
     | '/bikes/new'
     | '/leads/$leadId'
     | '/leads/new'
     | '/leads'
+    | '/api/test/seed'
+    | '/api/test/simulate'
     | '/bikes/$bikeId/edit'
     | '/api/public/whatsapp/webhook'
   id:
     | '__root__'
     | '/'
     | '/conversations'
+    | '/test'
     | '/bikes/new'
     | '/leads/$leadId'
     | '/leads/new'
     | '/leads/'
+    | '/api/test/seed'
+    | '/api/test/simulate'
     | '/bikes/$bikeId/edit'
     | '/api/public/whatsapp/webhook'
   fileRoutesById: FileRoutesById
@@ -127,16 +163,26 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ConversationsRoute: typeof ConversationsRoute
+  TestRoute: typeof TestRoute
   BikesNewRoute: typeof BikesNewRoute
   LeadsLeadIdRoute: typeof LeadsLeadIdRoute
   LeadsNewRoute: typeof LeadsNewRoute
   LeadsIndexRoute: typeof LeadsIndexRoute
+  ApiTestSeedRoute: typeof ApiTestSeedRoute
+  ApiTestSimulateRoute: typeof ApiTestSimulateRoute
   BikesBikeIdEditRoute: typeof BikesBikeIdEditRoute
   ApiPublicWhatsappWebhookRoute: typeof ApiPublicWhatsappWebhookRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/test': {
+      id: '/test'
+      path: '/test'
+      fullPath: '/test'
+      preLoaderRoute: typeof TestRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/conversations': {
       id: '/conversations'
       path: '/conversations'
@@ -186,6 +232,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BikesBikeIdEditRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/test/simulate': {
+      id: '/api/test/simulate'
+      path: '/api/test/simulate'
+      fullPath: '/api/test/simulate'
+      preLoaderRoute: typeof ApiTestSimulateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/test/seed': {
+      id: '/api/test/seed'
+      path: '/api/test/seed'
+      fullPath: '/api/test/seed'
+      preLoaderRoute: typeof ApiTestSeedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/whatsapp/webhook': {
       id: '/api/public/whatsapp/webhook'
       path: '/api/public/whatsapp/webhook'
@@ -199,10 +259,13 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ConversationsRoute: ConversationsRoute,
+  TestRoute: TestRoute,
   BikesNewRoute: BikesNewRoute,
   LeadsLeadIdRoute: LeadsLeadIdRoute,
   LeadsNewRoute: LeadsNewRoute,
   LeadsIndexRoute: LeadsIndexRoute,
+  ApiTestSeedRoute: ApiTestSeedRoute,
+  ApiTestSimulateRoute: ApiTestSimulateRoute,
   BikesBikeIdEditRoute: BikesBikeIdEditRoute,
   ApiPublicWhatsappWebhookRoute: ApiPublicWhatsappWebhookRoute,
 }
