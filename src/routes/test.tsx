@@ -60,9 +60,11 @@ function TestSimulatorPage() {
             role: "bot",
             text: data.reply,
             time: new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
+            media: data.media,
           },
         ]);
       }
+
     } catch (err) {
       toast.error(String(err));
     } finally {
