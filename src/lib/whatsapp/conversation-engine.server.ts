@@ -98,7 +98,11 @@ async function logMessage(
 export async function handleIncomingMessage(
   phone: string,
   message: string,
-): Promise<{ reply: string | null; stateVerified: boolean }> {
+): Promise<{
+  reply: string | null;
+  stateVerified: boolean;
+  media?: { url: string; type: "image" | "video" }[];
+}> {
   const state = await getOrCreateState(phone);
 
   // Bihar qualification must be the first interaction.
@@ -152,5 +156,6 @@ export async function handleIncomingMessage(
   }
 
 
-  return { reply: result.reply, stateVerified: true };
+  return { reply: result.reply, stateVerified: true, media: result.media };
 }
+
