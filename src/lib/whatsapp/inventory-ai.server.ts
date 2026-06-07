@@ -350,7 +350,9 @@ export async function handleVerifiedMessage(
   newBikeId?: string | null;
   interested?: boolean;
   negotiationProgress?: string | null;
+  media?: { url: string; type: "image" | "video" }[];
 }> {
+
   const vocab = await getInventoryVocab();
   const i = await interpret(message, vocab);
 
