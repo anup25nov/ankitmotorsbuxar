@@ -112,13 +112,30 @@ Rules:
 Use null for any field not present.`;
 
   try {
-    const { output } = await generateText({
+    const { text } = await generateText({
       model: gateway("google/gemini-3-flash-preview"),
-      output: Output.object({ schema: InterpretationSchema }),
-      system,
+      system: `${system}
+
+Respond with ONLY a JSON object (no markdown, no code fences) using exactly these keys:
+{"intent","company","model","year","price_max","price_min","sort","rto","question_field"}`,
       prompt: message,
     });
-    return output as Interpretation;
+
+    const cleaned = text
+      .trim()
+      .replace(/^```(?:json)?/i, "")
+      .replace(/```$/i, "")
+      .trim();
+    const start = cleaned.indexOf("{");
+    const end = cleaned.lastIndexOf("}");
+    if (start === -1 || end === -1) return null;
+    const parsed = JSON.parse(cleaned.slice(start, end + 1));
+    const result = InterpretationSchema.safeParse(parsed);
+    if (!result.success) {
+      console.error("[inventory-ai] schema parse failed", result.error.message);
+      return null;
+    }
+    return result.data;
   } catch (err) {
     console.error("[inventory-ai] interpret error", err);
     return null;
