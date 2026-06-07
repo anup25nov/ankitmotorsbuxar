@@ -10,12 +10,30 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as LeadsIndexRouteImport } from './routes/leads.index'
+import { Route as LeadsNewRouteImport } from './routes/leads.new'
+import { Route as LeadsLeadIdRouteImport } from './routes/leads.$leadId'
 import { Route as BikesNewRouteImport } from './routes/bikes.new'
 import { Route as BikesBikeIdEditRouteImport } from './routes/bikes.$bikeId.edit'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LeadsIndexRoute = LeadsIndexRouteImport.update({
+  id: '/leads/',
+  path: '/leads/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LeadsNewRoute = LeadsNewRouteImport.update({
+  id: '/leads/new',
+  path: '/leads/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LeadsLeadIdRoute = LeadsLeadIdRouteImport.update({
+  id: '/leads/$leadId',
+  path: '/leads/$leadId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BikesNewRoute = BikesNewRouteImport.update({
@@ -32,30 +50,61 @@ const BikesBikeIdEditRoute = BikesBikeIdEditRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/bikes/new': typeof BikesNewRoute
+  '/leads/$leadId': typeof LeadsLeadIdRoute
+  '/leads/new': typeof LeadsNewRoute
+  '/leads/': typeof LeadsIndexRoute
   '/bikes/$bikeId/edit': typeof BikesBikeIdEditRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/bikes/new': typeof BikesNewRoute
+  '/leads/$leadId': typeof LeadsLeadIdRoute
+  '/leads/new': typeof LeadsNewRoute
+  '/leads': typeof LeadsIndexRoute
   '/bikes/$bikeId/edit': typeof BikesBikeIdEditRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/bikes/new': typeof BikesNewRoute
+  '/leads/$leadId': typeof LeadsLeadIdRoute
+  '/leads/new': typeof LeadsNewRoute
+  '/leads/': typeof LeadsIndexRoute
   '/bikes/$bikeId/edit': typeof BikesBikeIdEditRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/bikes/new' | '/bikes/$bikeId/edit'
+  fullPaths:
+    | '/'
+    | '/bikes/new'
+    | '/leads/$leadId'
+    | '/leads/new'
+    | '/leads/'
+    | '/bikes/$bikeId/edit'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/bikes/new' | '/bikes/$bikeId/edit'
-  id: '__root__' | '/' | '/bikes/new' | '/bikes/$bikeId/edit'
+  to:
+    | '/'
+    | '/bikes/new'
+    | '/leads/$leadId'
+    | '/leads/new'
+    | '/leads'
+    | '/bikes/$bikeId/edit'
+  id:
+    | '__root__'
+    | '/'
+    | '/bikes/new'
+    | '/leads/$leadId'
+    | '/leads/new'
+    | '/leads/'
+    | '/bikes/$bikeId/edit'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   BikesNewRoute: typeof BikesNewRoute
+  LeadsLeadIdRoute: typeof LeadsLeadIdRoute
+  LeadsNewRoute: typeof LeadsNewRoute
+  LeadsIndexRoute: typeof LeadsIndexRoute
   BikesBikeIdEditRoute: typeof BikesBikeIdEditRoute
 }
 
@@ -66,6 +115,27 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/leads/': {
+      id: '/leads/'
+      path: '/leads'
+      fullPath: '/leads/'
+      preLoaderRoute: typeof LeadsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/leads/new': {
+      id: '/leads/new'
+      path: '/leads/new'
+      fullPath: '/leads/new'
+      preLoaderRoute: typeof LeadsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/leads/$leadId': {
+      id: '/leads/$leadId'
+      path: '/leads/$leadId'
+      fullPath: '/leads/$leadId'
+      preLoaderRoute: typeof LeadsLeadIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/bikes/new': {
@@ -88,6 +158,9 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   BikesNewRoute: BikesNewRoute,
+  LeadsLeadIdRoute: LeadsLeadIdRoute,
+  LeadsNewRoute: LeadsNewRoute,
+  LeadsIndexRoute: LeadsIndexRoute,
   BikesBikeIdEditRoute: BikesBikeIdEditRoute,
 }
 export const routeTree = rootRouteImport

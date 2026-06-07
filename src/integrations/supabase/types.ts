@@ -88,6 +88,82 @@ export type Database = {
         }
         Relationships: []
       }
+      lead_events: {
+        Row: {
+          created_at: string
+          description: string
+          event_type: string
+          id: string
+          lead_id: string
+        }
+        Insert: {
+          created_at?: string
+          description: string
+          event_type: string
+          id?: string
+          lead_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          event_type?: string
+          id?: string
+          lead_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_events_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      leads: {
+        Row: {
+          bike_id: string | null
+          bike_name: string | null
+          conversation_summary: string | null
+          created_at: string
+          id: string
+          last_offered_price: number | null
+          phone_number: string
+          status: Database["public"]["Enums"]["lead_status"]
+          updated_at: string
+        }
+        Insert: {
+          bike_id?: string | null
+          bike_name?: string | null
+          conversation_summary?: string | null
+          created_at?: string
+          id?: string
+          last_offered_price?: number | null
+          phone_number: string
+          status?: Database["public"]["Enums"]["lead_status"]
+          updated_at?: string
+        }
+        Update: {
+          bike_id?: string | null
+          bike_name?: string | null
+          conversation_summary?: string | null
+          created_at?: string
+          id?: string
+          last_offered_price?: number | null
+          phone_number?: string
+          status?: Database["public"]["Enums"]["lead_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leads_bike_id_fkey"
+            columns: ["bike_id"]
+            isOneToOne: false
+            referencedRelation: "bikes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -97,6 +173,7 @@ export type Database = {
     }
     Enums: {
       bike_status: "Available" | "Reserved" | "Sold"
+      lead_status: "New" | "Store Visit Scheduled" | "Visited" | "Sold" | "Lost"
       media_type: "photo" | "video"
     }
     CompositeTypes: {
@@ -226,6 +303,7 @@ export const Constants = {
   public: {
     Enums: {
       bike_status: ["Available", "Reserved", "Sold"],
+      lead_status: ["New", "Store Visit Scheduled", "Visited", "Sold", "Lost"],
       media_type: ["photo", "video"],
     },
   },
