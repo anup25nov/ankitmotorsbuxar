@@ -545,7 +545,7 @@ export async function handleVerifiedMessage(
   await sendWhatsAppText(phone, reply);
 
   const top = results[0];
-  await sendBikePhotos(phone, top);
+  const photoUrls = await sendBikePhotos(phone, top);
 
   // Switching bikes resets negotiation progress.
   const resetProgress =
@@ -556,5 +556,7 @@ export async function handleVerifiedMessage(
     newBikeId: top.id,
     interested: true,
     negotiationProgress: resetProgress,
+    media: photoUrls.map((url) => ({ url, type: "image" as const })),
   };
 }
+
