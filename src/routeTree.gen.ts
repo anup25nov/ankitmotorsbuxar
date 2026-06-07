@@ -10,33 +10,53 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as BikesNewRouteImport } from './routes/bikes.new'
+import { Route as BikesBikeIdEditRouteImport } from './routes/bikes.$bikeId.edit'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BikesNewRoute = BikesNewRouteImport.update({
+  id: '/bikes/new',
+  path: '/bikes/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BikesBikeIdEditRoute = BikesBikeIdEditRouteImport.update({
+  id: '/bikes/$bikeId/edit',
+  path: '/bikes/$bikeId/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/bikes/new': typeof BikesNewRoute
+  '/bikes/$bikeId/edit': typeof BikesBikeIdEditRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/bikes/new': typeof BikesNewRoute
+  '/bikes/$bikeId/edit': typeof BikesBikeIdEditRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/bikes/new': typeof BikesNewRoute
+  '/bikes/$bikeId/edit': typeof BikesBikeIdEditRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/bikes/new' | '/bikes/$bikeId/edit'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/bikes/new' | '/bikes/$bikeId/edit'
+  id: '__root__' | '/' | '/bikes/new' | '/bikes/$bikeId/edit'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  BikesNewRoute: typeof BikesNewRoute
+  BikesBikeIdEditRoute: typeof BikesBikeIdEditRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,12 +68,38 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/bikes/new': {
+      id: '/bikes/new'
+      path: '/bikes/new'
+      fullPath: '/bikes/new'
+      preLoaderRoute: typeof BikesNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/bikes/$bikeId/edit': {
+      id: '/bikes/$bikeId/edit'
+      path: '/bikes/$bikeId/edit'
+      fullPath: '/bikes/$bikeId/edit'
+      preLoaderRoute: typeof BikesBikeIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  BikesNewRoute: BikesNewRoute,
+  BikesBikeIdEditRoute: BikesBikeIdEditRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
