@@ -50,17 +50,17 @@ function formatBike(b: BikeRow): string {
 const InterpretationSchema = z.object({
   intent: z
     .enum(["search", "question", "show_more", "video", "human", "other"])
-    .default("other"),
-  company: z.string().nullish().default(null),
-  model: z.string().nullish().default(null),
-  year: z.number().nullish().default(null),
-  price_max: z.number().nullish().default(null),
-  price_min: z.number().nullish().default(null),
-  sort: z.enum(["km_asc", "price_asc", "none"]).default("none"),
-  rto: z.string().nullish().default(null),
+    .catch("other"),
+  company: z.string().nullish().catch(null),
+  model: z.string().nullish().catch(null),
+  year: z.coerce.number().nullish().catch(null),
+  price_max: z.coerce.number().nullish().catch(null),
+  price_min: z.coerce.number().nullish().catch(null),
+  sort: z.enum(["km_asc", "price_asc", "none"]).catch("none"),
+  rto: z.string().nullish().catch(null),
   question_field: z
     .enum(["rto", "km", "year", "price", "general", "none"])
-    .default("none"),
+    .catch("none"),
 });
 
 type Interpretation = z.infer<typeof InterpretationSchema>;
