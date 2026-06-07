@@ -2,8 +2,9 @@
 // qualification flow and conversation-state management.
 
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { sendWhatsAppText } from "./aisensy.server";
+import { sendWhatsAppText } from "./meta.server";
 import { handleVerifiedMessage } from "./inventory-ai.server";
+
 
 export const BIHAR_PROMPT = `Namaste.
 

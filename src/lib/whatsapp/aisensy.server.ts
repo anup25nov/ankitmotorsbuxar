@@ -39,9 +39,9 @@ export async function sendWhatsAppText(
     return { ok: false, status: 500, body: "Missing project API key" };
   }
 
-  const projectId = getProjectIdFromKey(projectKey);
+  const projectId = process.env.AISENSY_PROJECT_ID || getProjectIdFromKey(projectKey);
   if (!projectId) {
-    console.error("[aisensy] could not derive project id from API key");
+    console.error("[aisensy] could not derive project id from API key and AISENSY_PROJECT_ID is not set");
     return { ok: false, status: 500, body: "Invalid project API key" };
   }
 
@@ -89,9 +89,9 @@ export async function sendWhatsAppMedia(
     return { ok: false, status: 500, body: "Missing project API key" };
   }
 
-  const projectId = getProjectIdFromKey(projectKey);
+  const projectId = process.env.AISENSY_PROJECT_ID || getProjectIdFromKey(projectKey);
   if (!projectId) {
-    console.error("[aisensy] could not derive project id from API key");
+    console.error("[aisensy] could not derive project id from API key and AISENSY_PROJECT_ID is not set");
     return { ok: false, status: 500, body: "Invalid project API key" };
   }
 

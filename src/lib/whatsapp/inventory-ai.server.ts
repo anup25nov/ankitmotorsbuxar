@@ -7,7 +7,8 @@ import { generateText } from "ai";
 
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
-import { sendWhatsAppText, sendWhatsAppMedia } from "./aisensy.server";
+import { sendWhatsAppText, sendWhatsAppMedia } from "./meta.server";
+
 
 export const ESCALATION_MESSAGE = `Ankit Motors Buxar
 
