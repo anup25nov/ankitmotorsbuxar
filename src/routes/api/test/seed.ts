@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
-const DEMO_BIKES = [
+const DEMO_BIKES: { company: string; model: string; year: number; km_covered: number; rto_number: string; display_price: number; status: "Available" | "Reserved" | "Sold" }[] = [
   {
     company: "TVS",
     model: "Apache RTR 160",
