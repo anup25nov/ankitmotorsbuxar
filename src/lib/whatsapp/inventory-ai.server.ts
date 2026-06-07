@@ -5,7 +5,7 @@
 // used for understanding, never for stating inventory facts.
 
 import { z } from "zod";
-import { generateText, Output } from "ai";
+import { generateText } from "ai";
 
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
