@@ -88,6 +88,63 @@ export type Database = {
         }
         Relationships: []
       }
+      conversation_state: {
+        Row: {
+          created_at: string
+          current_bike_id: string | null
+          id: string
+          interested: boolean
+          negotiation_progress: string | null
+          phone_number: string
+          state_verified: boolean
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          current_bike_id?: string | null
+          id?: string
+          interested?: boolean
+          negotiation_progress?: string | null
+          phone_number: string
+          state_verified?: boolean
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          current_bike_id?: string | null
+          id?: string
+          interested?: boolean
+          negotiation_progress?: string | null
+          phone_number?: string
+          state_verified?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      conversations: {
+        Row: {
+          created_at: string
+          id: string
+          message: string
+          phone_number: string
+          sender: Database["public"]["Enums"]["conversation_sender"]
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          message: string
+          phone_number: string
+          sender: Database["public"]["Enums"]["conversation_sender"]
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          message?: string
+          phone_number?: string
+          sender?: Database["public"]["Enums"]["conversation_sender"]
+        }
+        Relationships: []
+      }
       lead_events: {
         Row: {
           created_at: string
@@ -173,6 +230,7 @@ export type Database = {
     }
     Enums: {
       bike_status: "Available" | "Reserved" | "Sold"
+      conversation_sender: "customer" | "bot"
       lead_status: "New" | "Store Visit Scheduled" | "Visited" | "Sold" | "Lost"
       media_type: "photo" | "video"
     }
@@ -303,6 +361,7 @@ export const Constants = {
   public: {
     Enums: {
       bike_status: ["Available", "Reserved", "Sold"],
+      conversation_sender: ["customer", "bot"],
       lead_status: ["New", "Store Visit Scheduled", "Visited", "Sold", "Lost"],
       media_type: ["photo", "video"],
     },
