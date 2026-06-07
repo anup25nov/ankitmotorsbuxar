@@ -225,7 +225,10 @@ async function getBike(id: string): Promise<BikeRow | null> {
   return (data as BikeRow) ?? null;
 }
 
-async function sendBikePhotos(phone: string, bike: BikeRow) {
+async function sendBikePhotos(
+  phone: string,
+  bike: BikeRow,
+): Promise<string[]> {
   const { data: media } = await supabaseAdmin
     .from("bike_media")
     .select("file_url, media_type")
@@ -233,17 +236,23 @@ async function sendBikePhotos(phone: string, bike: BikeRow) {
     .eq("media_type", "photo")
     .limit(3);
 
+  const urls: string[] = [];
   for (const m of media ?? []) {
     const { data: signed } = await supabaseAdmin.storage
       .from("bike-media")
       .createSignedUrl((m as any).file_url, 3600);
     if (signed?.signedUrl) {
+      urls.push(signed.signedUrl);
       await sendWhatsAppMedia(phone, signed.signedUrl, "image");
     }
   }
+  return urls;
 }
 
-async function sendBikeVideo(phone: string, bikeId: string): Promise<boolean> {
+async function sendBikeVideo(
+  phone: string,
+  bikeId: string,
+): Promise<string | null> {
   const { data: media } = await supabaseAdmin
     .from("bike_media")
     .select("file_url")
@@ -251,16 +260,17 @@ async function sendBikeVideo(phone: string, bikeId: string): Promise<boolean> {
     .eq("media_type", "video")
     .limit(1)
     .maybeSingle();
-  if (!media) return false;
+  if (!media) return null;
   const { data: signed } = await supabaseAdmin.storage
     .from("bike-media")
     .createSignedUrl((media as any).file_url, 3600);
   if (signed?.signedUrl) {
     await sendWhatsAppMedia(phone, signed.signedUrl, "video");
-    return true;
+    return signed.signedUrl;
   }
-  return false;
+  return null;
 }
+
 
 /**
  * Compute the next price the AI is willing to quote, given the current
