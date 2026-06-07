@@ -154,6 +154,27 @@ function TestSimulatorPage() {
                   }`}
                 >
                   {m.text}
+                  {m.media && m.media.length > 0 && (
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      {m.media.map((media, idx) =>
+                        media.type === "image" ? (
+                          <img
+                            key={idx}
+                            src={media.url}
+                            alt="Bike"
+                            className="rounded-md border object-cover w-full h-32"
+                          />
+                        ) : (
+                          <video
+                            key={idx}
+                            src={media.url}
+                            controls
+                            className="rounded-md border w-full col-span-2"
+                          />
+                        ),
+                      )}
+                    </div>
+                  )}
                   <div
                     className={`mt-1 text-[10px] ${
                       m.role === "bot" ? "text-muted-foreground" : "text-primary-foreground/70"
@@ -161,6 +182,7 @@ function TestSimulatorPage() {
                   >
                     {m.time}
                   </div>
+
                 </div>
               </div>
             ))}
