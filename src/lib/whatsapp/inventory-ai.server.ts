@@ -225,7 +225,10 @@ async function getBike(id: string): Promise<BikeRow | null> {
   return (data as BikeRow) ?? null;
 }
 
-async function sendBikePhotos(phone: string, bike: BikeRow) {
+async function sendBikePhotos(
+  phone: string,
+  bike: BikeRow,
+): Promise<string[]> {
   const { data: media } = await supabaseAdmin
     .from("bike_media")
     .select("file_url, media_type")
@@ -233,17 +236,23 @@ async function sendBikePhotos(phone: string, bike: BikeRow) {
     .eq("media_type", "photo")
     .limit(3);
 
+  const urls: string[] = [];
   for (const m of media ?? []) {
     const { data: signed } = await supabaseAdmin.storage
       .from("bike-media")
       .createSignedUrl((m as any).file_url, 3600);
     if (signed?.signedUrl) {
+      urls.push(signed.signedUrl);
       await sendWhatsAppMedia(phone, signed.signedUrl, "image");
     }
   }
+  return urls;
 }
 
-async function sendBikeVideo(phone: string, bikeId: string): Promise<boolean> {
+async function sendBikeVideo(
+  phone: string,
+  bikeId: string,
+): Promise<string | null> {
   const { data: media } = await supabaseAdmin
     .from("bike_media")
     .select("file_url")
@@ -251,16 +260,17 @@ async function sendBikeVideo(phone: string, bikeId: string): Promise<boolean> {
     .eq("media_type", "video")
     .limit(1)
     .maybeSingle();
-  if (!media) return false;
+  if (!media) return null;
   const { data: signed } = await supabaseAdmin.storage
     .from("bike-media")
     .createSignedUrl((media as any).file_url, 3600);
   if (signed?.signedUrl) {
     await sendWhatsAppMedia(phone, signed.signedUrl, "video");
-    return true;
+    return signed.signedUrl;
   }
-  return false;
+  return null;
 }
+
 
 /**
  * Compute the next price the AI is willing to quote, given the current
@@ -340,7 +350,9 @@ export async function handleVerifiedMessage(
   newBikeId?: string | null;
   interested?: boolean;
   negotiationProgress?: string | null;
+  media?: { url: string; type: "image" | "video" }[];
 }> {
+
   const vocab = await getInventoryVocab();
   const i = await interpret(message, vocab);
 
@@ -360,17 +372,21 @@ export async function handleVerifiedMessage(
   // Video request
   if (i.intent === "video") {
     if (currentBikeId) {
-      const sent = await sendBikeVideo(phone, currentBikeId);
-      const reply = sent
+      const videoUrl = await sendBikeVideo(phone, currentBikeId);
+      const reply = videoUrl
         ? "Video bheja hai. 📹"
         : "Is bike ka video abhi available nahi hai.";
       await sendWhatsAppText(phone, reply);
-      return { reply };
+      return {
+        reply,
+        media: videoUrl ? [{ url: videoUrl, type: "video" }] : undefined,
+      };
     }
     const reply = "Pehle bataiye kaunsi bike chahiye, phir video bhejta hoon.";
     await sendWhatsAppText(phone, reply);
     return { reply };
   }
+
 
   const progress = parseProgress(negotiationProgressRaw);
 
@@ -529,7 +545,7 @@ export async function handleVerifiedMessage(
   await sendWhatsAppText(phone, reply);
 
   const top = results[0];
-  await sendBikePhotos(phone, top);
+  const photoUrls = await sendBikePhotos(phone, top);
 
   // Switching bikes resets negotiation progress.
   const resetProgress =
@@ -540,5 +556,7 @@ export async function handleVerifiedMessage(
     newBikeId: top.id,
     interested: true,
     negotiationProgress: resetProgress,
+    media: photoUrls.map((url) => ({ url, type: "image" as const })),
   };
 }
+
