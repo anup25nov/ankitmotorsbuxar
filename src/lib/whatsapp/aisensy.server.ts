@@ -74,6 +74,56 @@ export async function sendWhatsAppText(
 }
 
 /**
+ * Send a media message (image or video) with an optional caption via the
+ * AiSensy Direct/Project API.
+ */
+export async function sendWhatsAppMedia(
+  destination: string,
+  mediaUrl: string,
+  type: "image" | "video",
+  caption?: string,
+): Promise<SendResult> {
+  const projectKey = process.env.AISENSY_PROJECT_API_KEY;
+  if (!projectKey) {
+    console.error("[aisensy] AISENSY_PROJECT_API_KEY is not configured");
+    return { ok: false, status: 500, body: "Missing project API key" };
+  }
+
+  const projectId = getProjectIdFromKey(projectKey);
+  if (!projectId) {
+    console.error("[aisensy] could not derive project id from API key");
+    return { ok: false, status: 500, body: "Invalid project API key" };
+  }
+
+  const url = `https://apis.aisensy.com/project-apis/v1/project/${projectId}/messages`;
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-AiSensy-Project-API-Pwd": projectKey,
+        Authorization: `Bearer ${projectKey}`,
+      },
+      body: JSON.stringify({
+        to: destination,
+        type,
+        recipient_type: "individual",
+        [type]: { link: mediaUrl, ...(caption ? { caption } : {}) },
+      }),
+    });
+    const body = await res.text();
+    if (!res.ok) {
+      console.error(`[aisensy] send ${type} failed ${res.status}: ${body}`);
+    }
+    return { ok: res.ok, status: res.status, body };
+  } catch (err) {
+    console.error(`[aisensy] send ${type} error`, err);
+    return { ok: false, status: 500, body: String(err) };
+  }
+}
+
+/**
  * Send a WhatsApp template message via the AiSensy Campaign API. Useful for
  * proactively re-opening a conversation outside the 24h session window.
  */
