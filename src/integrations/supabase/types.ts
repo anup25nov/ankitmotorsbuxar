@@ -14,7 +14,80 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      bike_media: {
+        Row: {
+          bike_id: string
+          created_at: string
+          file_url: string
+          id: string
+          media_type: Database["public"]["Enums"]["media_type"]
+        }
+        Insert: {
+          bike_id: string
+          created_at?: string
+          file_url: string
+          id?: string
+          media_type: Database["public"]["Enums"]["media_type"]
+        }
+        Update: {
+          bike_id?: string
+          created_at?: string
+          file_url?: string
+          id?: string
+          media_type?: Database["public"]["Enums"]["media_type"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bike_media_bike_id_fkey"
+            columns: ["bike_id"]
+            isOneToOne: false
+            referencedRelation: "bikes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bikes: {
+        Row: {
+          company: string
+          created_at: string
+          display_price: number
+          id: string
+          km_covered: number
+          model: string
+          negotiation_percentage: number
+          rto_number: string
+          status: Database["public"]["Enums"]["bike_status"]
+          updated_at: string
+          year: number
+        }
+        Insert: {
+          company: string
+          created_at?: string
+          display_price: number
+          id?: string
+          km_covered?: number
+          model: string
+          negotiation_percentage?: number
+          rto_number: string
+          status?: Database["public"]["Enums"]["bike_status"]
+          updated_at?: string
+          year: number
+        }
+        Update: {
+          company?: string
+          created_at?: string
+          display_price?: number
+          id?: string
+          km_covered?: number
+          model?: string
+          negotiation_percentage?: number
+          rto_number?: string
+          status?: Database["public"]["Enums"]["bike_status"]
+          updated_at?: string
+          year?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +96,8 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      bike_status: "Available" | "Reserved" | "Sold"
+      media_type: "photo" | "video"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +224,9 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      bike_status: ["Available", "Reserved", "Sold"],
+      media_type: ["photo", "video"],
+    },
   },
 } as const
