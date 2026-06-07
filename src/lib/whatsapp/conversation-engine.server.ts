@@ -133,7 +133,10 @@ export async function handleIncomingMessage(
   );
   await logMessage(phone, "bot", result.reply);
 
-  const updates: Record<string, unknown> = {};
+  const updates: {
+    current_bike_id?: string | null;
+    interested?: boolean;
+  } = {};
   if (result.newBikeId !== undefined) updates.current_bike_id = result.newBikeId;
   if (result.interested) updates.interested = true;
   if (Object.keys(updates).length > 0) {
