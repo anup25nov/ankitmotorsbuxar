@@ -3,6 +3,7 @@
 
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { sendWhatsAppText } from "./aisensy.server";
+import { handleVerifiedMessage } from "./inventory-ai.server";
 
 export const BIHAR_PROMPT = `Namaste.
 
@@ -124,9 +125,26 @@ export async function handleIncomingMessage(
     return { reply: BIHAR_PROMPT, stateVerified: false };
   }
 
-  // State verified — conversation can continue. (AI + inventory in Phase 4.)
-  const reply = CONTINUE_MESSAGE;
-  await sendWhatsAppText(phone, reply);
-  await logMessage(phone, "bot", reply);
-  return { reply, stateVerified: true };
+  // State verified — hand off to the AI inventory assistant (Phase 4).
+  const result = await handleVerifiedMessage(
+    phone,
+    message,
+    state.current_bike_id,
+  );
+  await logMessage(phone, "bot", result.reply);
+
+  const updates: {
+    current_bike_id?: string | null;
+    interested?: boolean;
+  } = {};
+  if (result.newBikeId !== undefined) updates.current_bike_id = result.newBikeId;
+  if (result.interested) updates.interested = true;
+  if (Object.keys(updates).length > 0) {
+    await supabaseAdmin
+      .from("conversation_state")
+      .update(updates)
+      .eq("id", state.id);
+  }
+
+  return { reply: result.reply, stateVerified: true };
 }
