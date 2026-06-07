@@ -131,21 +131,26 @@ export async function handleIncomingMessage(
     phone,
     message,
     state.current_bike_id,
+    state.negotiation_progress,
   );
   await logMessage(phone, "bot", result.reply);
 
   const updates: {
     current_bike_id?: string | null;
     interested?: boolean;
+    negotiation_progress?: string | null;
   } = {};
   if (result.newBikeId !== undefined) updates.current_bike_id = result.newBikeId;
   if (result.interested) updates.interested = true;
+  if (result.negotiationProgress !== undefined)
+    updates.negotiation_progress = result.negotiationProgress;
   if (Object.keys(updates).length > 0) {
     await supabaseAdmin
       .from("conversation_state")
       .update(updates)
       .eq("id", state.id);
   }
+
 
   return { reply: result.reply, stateVerified: true };
 }
