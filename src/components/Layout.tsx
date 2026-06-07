@@ -1,8 +1,14 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { Bike, Users, MessageCircle } from "lucide-react";
+import { Bike, Users, MessageCircle, LogOut } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
 
 export function Layout({ children }: { children: ReactNode }) {
+  const signOut = async () => {
+    await supabase.auth.signOut();
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b bg-card">
@@ -26,6 +32,16 @@ export function Layout({ children }: { children: ReactNode }) {
             <NavLink to="/conversations" icon={<MessageCircle className="h-4 w-4" />}>
               Conversations
             </NavLink>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={signOut}
+              className="ml-2 text-muted-foreground hover:text-foreground"
+              aria-label="Sign out"
+            >
+              <LogOut className="h-4 w-4" />
+              <span className="ml-1.5 hidden sm:inline">Sign out</span>
+            </Button>
           </nav>
         </div>
       </header>
@@ -33,6 +49,7 @@ export function Layout({ children }: { children: ReactNode }) {
     </div>
   );
 }
+
 
 function NavLink({
   to,
