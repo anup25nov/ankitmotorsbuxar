@@ -372,17 +372,21 @@ export async function handleVerifiedMessage(
   // Video request
   if (i.intent === "video") {
     if (currentBikeId) {
-      const sent = await sendBikeVideo(phone, currentBikeId);
-      const reply = sent
+      const videoUrl = await sendBikeVideo(phone, currentBikeId);
+      const reply = videoUrl
         ? "Video bheja hai. 📹"
         : "Is bike ka video abhi available nahi hai.";
       await sendWhatsAppText(phone, reply);
-      return { reply };
+      return {
+        reply,
+        media: videoUrl ? [{ url: videoUrl, type: "video" }] : undefined,
+      };
     }
     const reply = "Pehle bataiye kaunsi bike chahiye, phir video bhejta hoon.";
     await sendWhatsAppText(phone, reply);
     return { reply };
   }
+
 
   const progress = parseProgress(negotiationProgressRaw);
 
