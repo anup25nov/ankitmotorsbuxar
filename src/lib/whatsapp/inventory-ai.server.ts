@@ -1,8 +1,6 @@
-// AI Inventory Assistant (server-only).
-// Understands Hindi/English/Hinglish (incl. typos & Devanagari), converts the
-// customer message into structured inventory filters, searches real inventory,
-// and produces grounded replies. Facts come ONLY from the database — the LLM is
-// used for understanding, never for stating inventory facts.
+// AI Inventory Assistant + Negotiation + Lead Conversion (server-only).
+// Phase 4 + Phase 5.
+// Facts come ONLY from the database — the LLM is used for understanding only.
 
 import { z } from "zod";
 import { generateText } from "ai";
@@ -19,6 +17,24 @@ Contact:
 Business Hours:
 8 AM – 7 PM`;
 
+export const STORE_INFO_MESSAGE = `Ankit Motors Buxar
+
+Address:
+Ahirauli, Buxar
+
+Google Maps:
+https://maps.google.com
+
+Contact:
+7050959444
+
+Hours:
+8 AM – 7 PM`;
+
+// Global negotiation cap: never discount more than 3% off display price.
+const NEGOTIATION_CAP = 0.03;
+const NEGOTIATION_STEPS = 3;
+
 interface BikeRow {
   id: string;
   company: string;
@@ -28,6 +44,21 @@ interface BikeRow {
   rto_number: string;
   display_price: number;
   status: string;
+}
+
+interface NegotiationProgress {
+  bike_id: string;
+  step: number; // 0 = no offer yet; 1..NEGOTIATION_STEPS as we move toward min
+  last_offered_price: number | null;
+}
+
+function parseProgress(raw: string | null): NegotiationProgress | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as NegotiationProgress;
+  } catch {
+    return null;
+  }
 }
 
 function formatINR(value: number): string {
@@ -47,15 +78,31 @@ function formatBike(b: BikeRow): string {
   ].join("\n");
 }
 
+function bikeDisplayName(b: BikeRow): string {
+  return `${b.company} ${b.model} (${b.year})`;
+}
+
 const InterpretationSchema = z.object({
   intent: z
-    .enum(["search", "question", "show_more", "video", "human", "other"])
+    .enum([
+      "search",
+      "question",
+      "show_more",
+      "video",
+      "human",
+      "offer",
+      "final_rate",
+      "interest_yes",
+      "interest_no",
+      "other",
+    ])
     .catch("other"),
   company: z.string().nullish().catch(null),
   model: z.string().nullish().catch(null),
   year: z.coerce.number().nullish().catch(null),
   price_max: z.coerce.number().nullish().catch(null),
   price_min: z.coerce.number().nullish().catch(null),
+  offered_price: z.coerce.number().nullish().catch(null),
   sort: z.enum(["km_asc", "price_asc", "none"]).catch("none"),
   rto: z.string().nullish().catch(null),
   question_field: z
@@ -69,9 +116,7 @@ async function getInventoryVocab(): Promise<{
   companies: string[];
   models: string[];
 }> {
-  const { data } = await supabaseAdmin
-    .from("bikes")
-    .select("company, model");
+  const { data } = await supabaseAdmin.from("bikes").select("company, model");
   const companies = Array.from(
     new Set((data ?? []).map((r: any) => r.company)),
   );
@@ -93,21 +138,25 @@ async function interpret(
 
   const system = `You are the parser for a used motorcycle dealership in Bihar, India.
 Customers write in Hindi, English, or Hinglish, often with typos, slang, or Devanagari script.
-Convert ONE customer message into structured search/intent fields. Do NOT answer the customer.
+Convert ONE customer message into structured fields. Do NOT answer the customer.
 
 Available companies: ${vocab.companies.join(", ") || "(none)"}
 Available models: ${vocab.models.join(", ") || "(none)"}
 
 Rules:
-- Map fuzzy/misspelled/Devanagari bike names to the closest available company or model EXACTLY as listed above (e.g. "apachi", "apache", "अपाची", "rtr" -> "Apache"). If nothing matches, use null.
-- "80k tak/ke andar/under" -> price_max 80000. "k" means thousand, "lakh"/"lac" means 100000.
-- "kam chalne wali"/"low km"/"kam chala" -> sort "km_asc". "sasta"/"cheapest" -> sort "price_asc".
-- A 4-digit number like 2023 is a year. Short codes like "br01", "br 01" are RTO values.
-- intent "search": customer wants to see bikes / applies filters.
-- intent "question": asking about a bike's detail (RTO, KM, year, price). Set question_field.
-- intent "show_more": "aur dikhao", "more", "next".
+- Map fuzzy/misspelled/Devanagari names to closest available company/model EXACTLY as listed above (e.g. "apachi","apache","अपाची","rtr" -> "Apache"). Else null.
+- "80k tak/ke andar/under" -> price_max 80000. "k"=1000, "lakh"/"lac"=100000.
+- "kam chalne wali"/"low km" -> sort "km_asc". "sasta"/"cheapest" -> sort "price_asc".
+- 4-digit number like 2023 is a year. "br01" is RTO.
+- intent "search": wants to see bikes / applies filters.
+- intent "question": asking a bike's detail. Set question_field.
+- intent "show_more": "aur dikhao","more","next","aur bike".
 - intent "video": asks for video.
-- intent "human": wants to talk to owner / phone number / call.
+- intent "human": wants owner / phone / call.
+- intent "offer": customer proposes/negotiates a price (e.g. "75k final","79 kar do","75000 me dedo"). Put the number in offered_price.
+- intent "final_rate": asks for the lowest/last price ("final rate","best price","last price","kam se kam","aakhri rate").
+- intent "interest_yes": confirms wanting this bike / wants to visit / book / asks for location/address ("haan chahiye","book karna hai","visit karunga","location bhejiye","aa raha hu","interested hu","le lunga","bike dekhni hai").
+- intent "interest_no": rejects this bike ("nahi chahiye","pasand nahi").
 - intent "other": greeting/unclear.
 Use null for any field not present.`;
 
@@ -117,7 +166,7 @@ Use null for any field not present.`;
       system: `${system}
 
 Respond with ONLY a JSON object (no markdown, no code fences) using exactly these keys:
-{"intent","company","model","year","price_max","price_min","sort","rto","question_field"}`,
+{"intent","company","model","year","price_max","price_min","offered_price","sort","rto","question_field"}`,
       prompt: message,
     });
 
@@ -167,6 +216,15 @@ async function searchBikes(i: Interpretation): Promise<BikeRow[]> {
   return (data ?? []) as BikeRow[];
 }
 
+async function getBike(id: string): Promise<BikeRow | null> {
+  const { data } = await supabaseAdmin
+    .from("bikes")
+    .select("id, company, model, year, km_covered, rto_number, display_price, status")
+    .eq("id", id)
+    .maybeSingle();
+  return (data as BikeRow) ?? null;
+}
+
 async function sendBikePhotos(phone: string, bike: BikeRow) {
   const { data: media } = await supabaseAdmin
     .from("bike_media")
@@ -205,14 +263,84 @@ async function sendBikeVideo(phone: string, bikeId: string): Promise<boolean> {
 }
 
 /**
+ * Compute the next price the AI is willing to quote, given the current
+ * negotiation step. Step 0 = full display price, step NEGOTIATION_STEPS = min.
+ * Never crosses below the per-bike minimum (display - 3%).
+ */
+function priceForStep(displayPrice: number, step: number): number {
+  const cap = Math.max(1, Math.min(NEGOTIATION_STEPS, step));
+  const min = Math.round(displayPrice * (1 - NEGOTIATION_CAP));
+  const offer = Math.round(
+    displayPrice - ((displayPrice - min) * cap) / NEGOTIATION_STEPS,
+  );
+  return Math.max(min, offer);
+}
+
+async function ensureLead(
+  phone: string,
+  bike: BikeRow,
+  lastOfferedPrice: number | null,
+) {
+  // Idempotent: if an active (non-Lost/Sold) lead for this customer+bike
+  // already exists, just update its last_offered_price.
+  const { data: existing } = await supabaseAdmin
+    .from("leads")
+    .select("id")
+    .eq("phone_number", phone)
+    .eq("bike_id", bike.id)
+    .not("status", "in", "(Sold,Lost)")
+    .maybeSingle();
+
+  // Build a short conversation summary from the most recent messages.
+  const { data: msgs } = await supabaseAdmin
+    .from("conversations")
+    .select("sender, message, created_at")
+    .eq("phone_number", phone)
+    .order("created_at", { ascending: false })
+    .limit(12);
+  const summary = (msgs ?? [])
+    .reverse()
+    .map((m: any) => `${m.sender === "customer" ? "C" : "B"}: ${m.message}`)
+    .join("\n")
+    .slice(0, 1800);
+
+  if (existing) {
+    await supabaseAdmin
+      .from("leads")
+      .update({
+        last_offered_price: lastOfferedPrice,
+        conversation_summary: summary,
+        bike_name: bikeDisplayName(bike),
+      })
+      .eq("id", (existing as any).id);
+    return;
+  }
+
+  await supabaseAdmin.from("leads").insert({
+    phone_number: phone,
+    bike_id: bike.id,
+    bike_name: bikeDisplayName(bike),
+    last_offered_price: lastOfferedPrice,
+    conversation_summary: summary,
+    status: "New",
+  });
+}
+
+/**
  * Handle a message from a Bihar-verified customer. Returns the bot reply text
- * that was sent (media is sent separately) and any state updates to persist.
+ * that was sent plus any state updates to persist.
  */
 export async function handleVerifiedMessage(
   phone: string,
   message: string,
   currentBikeId: string | null,
-): Promise<{ reply: string; newBikeId?: string | null; interested?: boolean }> {
+  negotiationProgressRaw: string | null,
+): Promise<{
+  reply: string;
+  newBikeId?: string | null;
+  interested?: boolean;
+  negotiationProgress?: string | null;
+}> {
   const vocab = await getInventoryVocab();
   const i = await interpret(message, vocab);
 
@@ -229,7 +357,7 @@ export async function handleVerifiedMessage(
     return { reply: ESCALATION_MESSAGE };
   }
 
-  // Video request for the currently viewed bike
+  // Video request
   if (i.intent === "video") {
     if (currentBikeId) {
       const sent = await sendBikeVideo(phone, currentBikeId);
@@ -244,38 +372,143 @@ export async function handleVerifiedMessage(
     return { reply };
   }
 
-  // Question about the current bike (answer ONLY from DB)
-  if (i.intent === "question" && currentBikeId && i.question_field !== "general") {
-    const { data: bike } = await supabaseAdmin
-      .from("bikes")
-      .select("id, company, model, year, km_covered, rto_number, display_price, status")
-      .eq("id", currentBikeId)
-      .maybeSingle();
+  const progress = parseProgress(negotiationProgressRaw);
+
+  // -------------------- PHASE 5: NEGOTIATION --------------------
+  if ((i.intent === "offer" || i.intent === "final_rate") && currentBikeId) {
+    const bike = await getBike(currentBikeId);
     if (bike) {
-      const b = bike as BikeRow;
+      const minPrice = Math.round(bike.display_price * (1 - NEGOTIATION_CAP));
+      const prevStep =
+        progress && progress.bike_id === bike.id ? progress.step : 0;
+
+      // Customer asks for final/best rate -> go straight to minimum.
+      if (i.intent === "final_rate") {
+        const reply = `Best available price:\n${formatINR(minPrice)}`;
+        await sendWhatsAppText(phone, reply);
+        const newProgress: NegotiationProgress = {
+          bike_id: bike.id,
+          step: NEGOTIATION_STEPS,
+          last_offered_price: minPrice,
+        };
+        return {
+          reply,
+          negotiationProgress: JSON.stringify(newProgress),
+          interested: true,
+        };
+      }
+
+      // Customer made a numeric offer.
+      const customerOffer = i.offered_price ?? null;
+
+      // Offer below the floor -> refuse without revealing the floor.
+      if (customerOffer !== null && customerOffer < minPrice) {
+        const reply = "Sorry, that price is not possible.";
+        await sendWhatsAppText(phone, reply);
+        return { reply };
+      }
+
+      // Offer at or above display -> accept at display.
+      if (customerOffer !== null && customerOffer >= bike.display_price) {
+        const reply = `Bahut badhiya. Price ${formatINR(bike.display_price)} confirm hai.`;
+        await sendWhatsAppText(phone, reply);
+        const newProgress: NegotiationProgress = {
+          bike_id: bike.id,
+          step: prevStep,
+          last_offered_price: bike.display_price,
+        };
+        return {
+          reply,
+          negotiationProgress: JSON.stringify(newProgress),
+          interested: true,
+        };
+      }
+
+      // Gradual negotiation: advance one step toward the floor.
+      const nextStep = Math.min(prevStep + 1, NEGOTIATION_STEPS);
+      const ourPrice = priceForStep(bike.display_price, nextStep);
+      // If customer's offer is between our step price and the floor, meet them there.
+      const meetPrice =
+        customerOffer !== null && customerOffer >= minPrice && customerOffer < ourPrice
+          ? customerOffer
+          : ourPrice;
+
+      const reply =
+        nextStep === 1
+          ? `I can help slightly.\n\nCurrent available price:\n${formatINR(meetPrice)}`
+          : nextStep >= NEGOTIATION_STEPS
+            ? `Best available price:\n${formatINR(meetPrice)}`
+            : `Thoda aur kam kar sakta hoon.\n\nCurrent available price:\n${formatINR(meetPrice)}`;
+      await sendWhatsAppText(phone, reply);
+
+      const newProgress: NegotiationProgress = {
+        bike_id: bike.id,
+        step: nextStep,
+        last_offered_price: meetPrice,
+      };
+      return {
+        reply,
+        negotiationProgress: JSON.stringify(newProgress),
+        interested: true,
+      };
+    }
+  }
+
+  // -------------------- PHASE 5: INTEREST + LEAD --------------------
+  if (i.intent === "interest_yes" && currentBikeId) {
+    const bike = await getBike(currentBikeId);
+    if (bike) {
+      const lastOffer =
+        progress && progress.bike_id === bike.id
+          ? progress.last_offered_price
+          : null;
+      await ensureLead(phone, bike, lastOffer);
+      await sendWhatsAppText(phone, STORE_INFO_MESSAGE);
+      return {
+        reply: STORE_INFO_MESSAGE,
+        interested: true,
+      };
+    }
+  }
+
+  if (i.intent === "interest_no") {
+    const reply =
+      "Theek hai. Aur kaunsi bike dekhni hai? Company ya budget bataiye. 🙏";
+    await sendWhatsAppText(phone, reply);
+    return { reply };
+  }
+
+  // Question about the current bike (answer ONLY from DB)
+  if (
+    i.intent === "question" &&
+    currentBikeId &&
+    i.question_field !== "general"
+  ) {
+    const bike = await getBike(currentBikeId);
+    if (bike) {
       let reply: string;
       switch (i.question_field) {
         case "rto":
-          reply = `RTO: ${b.rto_number}`;
+          reply = `RTO: ${bike.rto_number}`;
           break;
         case "km":
-          reply = `Ye bike ${b.km_covered.toLocaleString("en-IN")} km chali hui hai.`;
+          reply = `Ye bike ${bike.km_covered.toLocaleString("en-IN")} km chali hui hai.`;
           break;
         case "year":
-          reply = `Ye ${b.year} model hai.`;
+          reply = `Ye ${bike.year} model hai.`;
           break;
         case "price":
-          reply = `Price: ${formatINR(b.display_price)}`;
+          reply = `Price: ${formatINR(bike.display_price)}`;
           break;
         default:
-          reply = formatBike(b);
+          reply = formatBike(bike);
       }
       await sendWhatsAppText(phone, reply);
       return { reply, interested: true };
     }
   }
 
-  // search / show_more / general question -> run inventory search
+  // search / show_more / general -> run inventory search
   const results = await searchBikes(i);
 
   if (results.length === 0) {
@@ -290,12 +523,22 @@ export async function handleVerifiedMessage(
       ? "Ye bike available hai:"
       : `${results.length} bikes mili hain:`;
   const body = results.map(formatBike).join("\n\n");
-  const reply = `${header}\n\n${body}`;
+  // After a few interactions, prompt for interest.
+  const interestPrompt = `\n\nKya aapko ye bike chahiye?\n\n✅ Haan\n❌ Nahi\n🔄 Aur bike dikhao`;
+  const reply = `${header}\n\n${body}${interestPrompt}`;
   await sendWhatsAppText(phone, reply);
 
-  // Send photos for the top match and remember it as the current bike.
   const top = results[0];
   await sendBikePhotos(phone, top);
 
-  return { reply, newBikeId: top.id, interested: true };
+  // Switching bikes resets negotiation progress.
+  const resetProgress =
+    progress && progress.bike_id !== top.id ? null : negotiationProgressRaw;
+
+  return {
+    reply,
+    newBikeId: top.id,
+    interested: true,
+    negotiationProgress: resetProgress,
+  };
 }
