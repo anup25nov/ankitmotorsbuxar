@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { Bike, Users } from "lucide-react";
+import { Bike, Users, MessageCircle } from "lucide-react";
 
 export function Layout({ children }: { children: ReactNode }) {
   return (
@@ -22,6 +22,9 @@ export function Layout({ children }: { children: ReactNode }) {
             </NavLink>
             <NavLink to="/leads" icon={<Users className="h-4 w-4" />}>
               Leads
+            </NavLink>
+            <NavLink to="/conversations" icon={<MessageCircle className="h-4 w-4" />}>
+              Conversations
             </NavLink>
           </nav>
         </div>
