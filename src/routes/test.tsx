@@ -11,7 +11,9 @@ interface ChatMessage {
   role: "customer" | "bot";
   text: string;
   time: string;
+  media?: { url: string; type: "image" | "video" }[];
 }
+
 
 export const Route = createFileRoute("/test")({
   ssr: false,
