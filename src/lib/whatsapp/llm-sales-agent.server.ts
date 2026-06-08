@@ -283,6 +283,7 @@ export async function handleVerifiedMessage(
     const { object } = await generateObject({
       model: getModel(),
       schema: AgentResponseSchema,
+      mode: "tool",
       system,
       messages: llmMessages,
       temperature: 0.35,
