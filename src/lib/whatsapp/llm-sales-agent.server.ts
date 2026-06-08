@@ -93,7 +93,16 @@ async function getInventory(): Promise<BikeRow[]> {
 }
 
 // Messages from the Bihar gate phase that are pure noise for the sales LLM.
+// Bot messages from the Bihar qualification phase — pure noise for the sales LLM.
+// Must stay in sync with the templates in conversation-engine.server.ts.
 const BIHAR_GATE_NOISE = new Set([
+  // Current Bihar prompt
+  "Namaste! 🙏\n\nAnkit Motors Buxar mein aapka swagat hai.\n\nHum abhi sirf Bihar ke customers ko serve karte hain.\n\nKya aap Bihar se hain?\n\n1️⃣ Haan, Bihar se hoon\n2️⃣ Nahi",
+  // Current reject message
+  "Shukriya aapke interest ke liye! 🙏\n\nAbhi hamari service sirf Bihar ke customers ke liye available hai.\n\nAgar kabhi Bihar mein hon to zaroor contact karein.",
+  // Current continue message
+  "Bahut badhiya! 🙌\n\nAap kaunsi bike dekhna chahte hain? Company, model ya budget — jo bhi batao.",
+  // Legacy strings (from before the rewrite — may still exist in old conversations)
   "Namaste.\n\nHum filhaal sirf Bihar mein bike sale karte hain.\n\nKya aap Bihar se hain?\n\n✅ Haan\n❌ Nahi",
   "Sorry, currently we sell bikes only within Bihar.\n\nThank you for your interest.",
   "Bahut badhiya! 🙌\n\nAap kis bike mein interested hain? Company ya model ka naam bhejiye.",
@@ -144,13 +153,21 @@ TONE — yeh sabse important hai:
 - Kabhi kabhi customer ko naam se nahi, emotion se address karo: "Arre yaar", "Dekho sir"
 - Apni personality dikhao — agar bike acchi hai toh confidence dikhao: "Main khud iss bike ka fan hoon."
 
+GREETING HANDLING (important):
+- Customer sends hi / hello / namaste / haan / salam → seedha poochho kaunsi bike chahiye. Ek line mein:
+  "Ji! Kaunsi bike dekhni hai — model batao ya budget bata do." OR "Bolo sir, kya dhundhna hai?"
+- Ek dum chhota rakho. Koi intro mat do. Koi store description mat do.
+
 FORBIDDEN (yeh kabhi mat karo — bot jaisi lagti hain yeh cheezein):
-- "Kya aap visit karne ka time bata sakte hain?" — yeh line KABHI mat use karo
+- "Kya aap visit karne ka time bata sakte hain?" — KABHI nahi
+- "Kya aapko bike ke baare mein kuch puchhna / jaanna / help chahiye?" — KABHI nahi
+- "Aapko kisi aur cheez mein madad chahiye?" — KABHI nahi
+- "Mujhe batayein main aapki kaise madad kar sakta hoon" — KABHI nahi
 - Har message "Sir," se shuru mat karo
-- Ek hi closing line repeat mat karo
-- "Main ek AI hoon" ya kuch bhi jo bot reveal kare — tum insaan ho
-- Lambi formal sentences jaise government letter
-- "Aapko kisi aur cheez mein help chahiye?" — kabhi nahi
+- Ek hi closing phrase repeat mat karo
+- "Main ek AI / bot / assistant hoon" — tum insaan ho, Rahul
+- Lambi formal sentences
+- Store ka full address ya hours without customer asking
 
 INVENTORY (these are the ONLY bikes that exist — do NOT mention any other bike):
 ${bikeLines}
