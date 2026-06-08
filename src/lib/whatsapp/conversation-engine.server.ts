@@ -1,59 +1,77 @@
-// Conversation engine (server-only). Implements the Phase 3 Bihar-only
-// qualification flow and conversation-state management.
+// Conversation engine (server-only).
+// Strict Bihar-only gate → verified users go to LLM sales agent.
 
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { sendWhatsAppText } from "./meta.server";
 import { handleVerifiedMessage } from "./llm-sales-agent.server";
 
+// ─── Message templates ────────────────────────────────────────────────────────
 
-export const BIHAR_PROMPT = `Namaste.
+const BIHAR_PROMPT = `Namaste! 🙏
 
-Hum filhaal sirf Bihar mein bike sale karte hain.
+Ankit Motors Buxar mein aapka swagat hai.
+
+Hum abhi sirf Bihar ke customers ko serve karte hain.
 
 Kya aap Bihar se hain?
 
-✅ Haan
-❌ Nahi`;
+1️⃣ Haan, Bihar se hoon
+2️⃣ Nahi`;
 
-export const REJECT_MESSAGE = `Sorry, currently we sell bikes only within Bihar.
+const REJECT_MESSAGE = `Shukriya aapke interest ke liye! 🙏
 
-Thank you for your interest.`;
+Abhi hamari service sirf Bihar ke customers ke liye available hai.
 
-export const CONTINUE_MESSAGE = `Bahut badhiya! 🙌
+Agar kabhi Bihar mein hon to zaroor contact karein.`;
 
-Aap kis bike mein interested hain? Company ya model ka naam bhejiye.`;
+const CONTINUE_MESSAGE = `Bahut badhiya! 🙌
 
-interface ConversationState {
-  id: string;
-  phone_number: string;
-  state_verified: boolean;
-  current_bike_id: string | null;
-  negotiation_progress: string | null;
-  interested: boolean;
-}
+Aap kaunsi bike dekhna chahte hain? Company, model ya budget — jo bhi batao.`;
 
+// Sentinel stored in negotiation_progress to permanently mark rejected users.
+// LLM always resets negotiation_progress to null for verified users, so no conflict.
+const REJECTED_SENTINEL = "__rejected__";
+
+// ─── Bihar districts — any mention = confirmed Bihar ─────────────────────────
+
+const BIHAR_DISTRICTS = new Set([
+  "patna", "gaya", "bhagalpur", "muzaffarpur", "darbhanga", "purnia",
+  "araria", "ara", "buxar", "bhojpur", "rohtas", "kaimur", "aurangabad",
+  "nawada", "nalanda", "sheikhpura", "lakhisarai", "jamui", "banka",
+  "munger", "begusarai", "samastipur", "madhubani", "sitamarhi",
+  "sheohar", "supaul", "madhepura", "saharsa", "khagaria",
+  "chapra", "saran", "siwan", "gopalganj", "east champaran",
+  "west champaran", "motihari", "betia", "vaishali", "hajipur",
+  "jehanabad", "arwal", "katihar", "kishanganj",
+]);
+
+// ─── Intent detection ─────────────────────────────────────────────────────────
 
 function normalize(text: string): string {
   return text.trim().toLowerCase();
 }
 
-function words(t: string): Set<string> {
+function wordSet(t: string): Set<string> {
   return new Set(t.split(/[\s,।.!?]+/).filter(Boolean));
 }
 
 function isAffirmative(text: string): boolean {
   const t = normalize(text);
-  const w = words(t);
+  const w = wordSet(t);
 
-  // Safe substring checks — these strings won't appear inside unrelated words
+  // Substring-safe: these strings don't appear inside unrelated words
   if (t.includes("✅")) return true;
-  if (t.includes("haan")) return true;   // "haan" won't appear inside bike names
-  if (t.includes("bihar")) return true;  // any Bihar mention = confirmed
+  if (t.includes("haan")) return true;
   if (t.includes("bilkul")) return true;
-  if (t.includes("ji han")) return true;
-  if (t.includes("haan ji")) return true;
+  if (t.includes("haan ji") || t.includes("ji haan")) return true;
+  if (t.includes("bihar")) return true;
 
-  // Word-level only — these are single chars/short tokens that appear inside other words
+  // Bihar district names
+  for (const d of BIHAR_DISTRICTS) {
+    if (t.includes(d)) return true;
+  }
+
+  // Word-level only (single chars / short tokens appear inside other words as substrings)
   return (
     t === "1" ||
     w.has("haa") ||
@@ -70,22 +88,29 @@ function isAffirmative(text: string): boolean {
 
 function isNegative(text: string): boolean {
   const t = normalize(text);
-  const w = words(t);
+  const w = wordSet(t);
 
-  // Safe substring checks
   if (t.includes("❌")) return true;
   if (t.includes("nahi")) return true;
   if (t.includes("nai")) return true;
   if (t.includes("nhi")) return true;
   if (t.includes("nahin")) return true;
 
-  // Word-level only
   return t === "2" || w.has("no") || w.has("nope");
 }
 
-async function getOrCreateState(
-  phone: string,
-): Promise<ConversationState> {
+// ─── DB helpers ───────────────────────────────────────────────────────────────
+
+interface ConversationState {
+  id: string;
+  phone_number: string;
+  state_verified: boolean;
+  current_bike_id: string | null;
+  negotiation_progress: string | null;
+  interested: boolean;
+}
+
+async function getOrCreateState(phone: string): Promise<ConversationState> {
   const { data: existing } = await supabaseAdmin
     .from("conversation_state")
     .select("*")
@@ -104,20 +129,12 @@ async function getOrCreateState(
   return created as ConversationState;
 }
 
-async function logMessage(
-  phone: string,
-  sender: "customer" | "bot",
-  message: string,
-) {
-  await supabaseAdmin
-    .from("conversations")
-    .insert({ phone_number: phone, sender, message });
+async function logMessage(phone: string, sender: "customer" | "bot", message: string) {
+  await supabaseAdmin.from("conversations").insert({ phone_number: phone, sender, message });
 }
 
-/**
- * Process one inbound customer message and respond per the Bihar-only flow.
- * Returns the bot reply that was sent (or null when no reply is appropriate).
- */
+// ─── Main handler ─────────────────────────────────────────────────────────────
+
 export async function handleIncomingMessage(
   phone: string,
   message: string,
@@ -128,13 +145,25 @@ export async function handleIncomingMessage(
 }> {
   const state = await getOrCreateState(phone);
 
-  // Log every inbound customer message so the LLM has full history.
+  // ── GATE 1: Permanently rejected users ──────────────────────────────────────
+  // Once rejected, we log their message but send no reply — hard stop.
+  if (state.negotiation_progress === REJECTED_SENTINEL) {
+    await logMessage(phone, "customer", message);
+    console.log(`[engine] rejected user ${phone} messaged again — silently ignored`);
+    return { reply: null, stateVerified: false };
+  }
+
+  // Log every inbound message (for rejected users we logged above and returned)
   await logMessage(phone, "customer", message);
 
-  // Bihar qualification must be the first interaction.
+  // ── GATE 2: Bihar qualification ──────────────────────────────────────────────
   if (!state.state_verified) {
     if (isNegative(message)) {
-      // Stop the flow: no inventory search, no AI, no lead creation.
+      // Mark as permanently rejected so future messages get a hard stop
+      await supabaseAdmin
+        .from("conversation_state")
+        .update({ negotiation_progress: REJECTED_SENTINEL })
+        .eq("id", state.id);
       await sendWhatsAppText(phone, REJECT_MESSAGE);
       await logMessage(phone, "bot", REJECT_MESSAGE);
       return { reply: REJECT_MESSAGE, stateVerified: false };
@@ -150,13 +179,13 @@ export async function handleIncomingMessage(
       return { reply: CONTINUE_MESSAGE, stateVerified: true };
     }
 
-    // First message or unrecognized → ask the Bihar qualification question.
+    // Unrecognized / first message → ask Bihar question
     await sendWhatsAppText(phone, BIHAR_PROMPT);
     await logMessage(phone, "bot", BIHAR_PROMPT);
     return { reply: BIHAR_PROMPT, stateVerified: false };
   }
 
-  // State verified — hand off to the AI inventory assistant (Phase 4).
+  // ── VERIFIED: Hand off to LLM sales agent ───────────────────────────────────
   const result = await handleVerifiedMessage(
     phone,
     message,
@@ -165,6 +194,7 @@ export async function handleIncomingMessage(
   );
   await logMessage(phone, "bot", result.reply);
 
+  // Persist any state updates from the LLM agent
   const updates: {
     current_bike_id?: string | null;
     interested?: boolean;
@@ -174,6 +204,7 @@ export async function handleIncomingMessage(
   if (result.interested) updates.interested = true;
   if (result.negotiationProgress !== undefined)
     updates.negotiation_progress = result.negotiationProgress;
+
   if (Object.keys(updates).length > 0) {
     await supabaseAdmin
       .from("conversation_state")
@@ -181,7 +212,5 @@ export async function handleIncomingMessage(
       .eq("id", state.id);
   }
 
-
   return { reply: result.reply, stateVerified: true, media: result.media };
 }
-
