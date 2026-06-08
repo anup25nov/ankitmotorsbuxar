@@ -5,26 +5,21 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { sendWhatsAppText, sendWhatsAppMedia } from "./meta.server";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { generateObject } from "ai";
-import { z } from "zod";
+import { generateText } from "ai";
 
 const OWNER_PHONE = "7050959444";
 const STORE_NAME = "Ankit Motors Buxar";
 const STORE_ADDRESS = "Ahirauli, Buxar, Bihar";
 const MAX_DISCOUNT = 0.03; // 3% max off display price
 
-// ─── Response schema (enforced by generateObject — no manual JSON parsing) ────
+// ─── Response type ────────────────────────────────────────────────────────────
 
-const AgentResponseSchema = z.object({
-  reply: z.string().describe("WhatsApp message in Hindi/Hinglish, 1-3 sentences"),
-  bike_id: z.string().nullable().describe("Exact bike ID from inventory, or null"),
-  action: z
-    .enum(["none", "send_photos", "send_video", "create_lead", "escalate"])
-    .describe("Action to execute after sending the reply"),
-  interested: z.boolean().describe("Whether customer showed purchase interest"),
-});
-
-type AgentResponse = z.infer<typeof AgentResponseSchema>;
+interface AgentResponse {
+  reply: string;
+  bike_id: string | null;
+  action: "none" | "send_photos" | "send_video" | "create_lead" | "escalate";
+  interested: boolean;
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -105,9 +100,15 @@ function buildSystemPrompt(inventory: BikeRow[], currentBike: BikeRow | null): s
     ? `\nCustomer is currently looking at: [${currentBike.id}] ${currentBike.company} ${currentBike.model} ${currentBike.year} | Price: ${inr(currentBike.display_price)} | Floor: ${inr(floorPrice(currentBike.display_price))}`
     : "";
 
-  return `Tum Ankit Motors Buxar ke sales executive ho — ek sharp, experienced used-bike dealer Bihar se.
+  return `IMPORTANT: You must respond with ONLY a valid JSON object. No plain text. No markdown. No explanation outside the JSON.
+
+Required JSON format:
+{"reply":"<message>","bike_id":"<id or null>","action":"<none|send_photos|send_video|create_lead|escalate>","interested":<true|false>}
+
+---
+
+Tum Ankit Motors Buxar ke sales executive ho — ek sharp, experienced used-bike dealer Bihar se.
 Tum Hinglish mein baat karte ho — natural, warm, direct. Bilkul waise jaise ek trusted local dealer baat karta hai jo bikes ko inside-out jaanta ho.
-Hamesha valid JSON object mein respond karo jisme reply, bike_id, action, aur interested fields hon.
 
 STORE INFO:
   Naam: ${STORE_NAME}
@@ -281,16 +282,19 @@ export async function handleVerifiedMessage(
 
   let agentRes: AgentResponse;
   try {
-    const { object } = await generateObject({
+    const { text } = await generateText({
       model: getModel(),
-      schema: AgentResponseSchema,
-      mode: "tool",
       system,
       messages: llmMessages,
       temperature: 0.35,
       maxTokens: 500,
     });
-    agentRes = object;
+
+    // Extract the JSON object from the response — handles markdown fences,
+    // leading/trailing text, and other model formatting quirks.
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error(`No JSON in response: ${text.slice(0, 100)}`);
+    agentRes = JSON.parse(jsonMatch[0]) as AgentResponse;
   } catch (err) {
     console.error("[llm-agent] error:", err);
     agentRes = {
