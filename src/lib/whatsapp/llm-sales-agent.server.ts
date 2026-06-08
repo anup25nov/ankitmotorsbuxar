@@ -1,25 +1,14 @@
 // LLM-powered Bihar bike sales agent (server-only).
-// OpenAI is used ONLY for language generation.
-// All inventory facts come from PostgreSQL — the LLM never invents bikes or prices.
+// Uses OpenAI Chat Completions API directly (no SDK) with response_format: json_object
+// so JSON output is guaranteed. All inventory facts come from PostgreSQL.
 
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { sendWhatsAppText, sendWhatsAppMedia } from "./meta.server";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { generateText } from "ai";
 
 const OWNER_PHONE = "7050959444";
 const STORE_NAME = "Ankit Motors Buxar";
 const STORE_ADDRESS = "Ahirauli, Buxar, Bihar";
-const MAX_DISCOUNT = 0.03; // 3% max off display price
-
-// ─── Response type ────────────────────────────────────────────────────────────
-
-interface AgentResponse {
-  reply: string;
-  bike_id: string | null;
-  action: "none" | "send_photos" | "send_video" | "create_lead" | "escalate";
-  interested: boolean;
-}
+const MAX_DISCOUNT = 0.03;
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -39,17 +28,44 @@ interface DbConversation {
   message: string;
 }
 
-// ─── LLM client ──────────────────────────────────────────────────────────────
+interface AgentResponse {
+  reply: string;
+  bike_id: string | null;
+  action: "none" | "send_photos" | "send_video" | "create_lead" | "escalate";
+  interested: boolean;
+}
 
-function getModel() {
+// ─── Direct OpenAI call (no SDK — guarantees json_object mode works) ─────────
+
+async function callOpenAI(
+  systemPrompt: string,
+  messages: Array<{ role: "user" | "assistant"; content: string }>,
+): Promise<string> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY not configured");
-  const provider = createOpenAICompatible({
-    name: "openai",
-    baseURL: "https://api.openai.com/v1",
-    headers: { Authorization: `Bearer ${apiKey}` },
+
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+      response_format: { type: "json_object" }, // guaranteed JSON output
+      temperature: 0.3,
+      max_tokens: 400,
+      messages: [{ role: "system", content: systemPrompt }, ...messages],
+    }),
   });
-  return provider(process.env.OPENAI_MODEL ?? "gpt-4o-mini");
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`OpenAI ${res.status}: ${err}`);
+  }
+
+  const data = (await res.json()) as { choices: Array<{ message: { content: string } }> };
+  return data.choices[0]?.message?.content ?? "";
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -58,8 +74,8 @@ function inr(n: number): string {
   return "₹" + new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(n);
 }
 
-function floorPrice(displayPrice: number): number {
-  return Math.round(displayPrice * (1 - MAX_DISCOUNT));
+function floorPrice(p: number): number {
+  return Math.round(p * (1 - MAX_DISCOUNT));
 }
 
 // ─── Data fetchers ────────────────────────────────────────────────────────────
@@ -74,15 +90,13 @@ async function getInventory(): Promise<BikeRow[]> {
 }
 
 async function getHistory(phone: string): Promise<DbConversation[]> {
-  // Fetch newest 20 messages first (DESC), then reverse to chronological order.
-  // Using ASC + LIMIT fetched the oldest messages and cut off the customer's
-  // latest message when the conversation grew past the limit.
+  // Fetch newest 16 messages (DESC) then reverse → always has the latest customer message.
   const { data } = await supabaseAdmin
     .from("conversations")
     .select("sender, message")
     .eq("phone_number", phone)
     .order("created_at", { ascending: false })
-    .limit(20);
+    .limit(16);
   return ((data ?? []) as DbConversation[]).reverse();
 }
 
@@ -94,85 +108,41 @@ function buildSystemPrompt(inventory: BikeRow[], currentBike: BikeRow | null): s
       ? inventory
           .map((b) => {
             const tag = b.status === "Reserved" ? " [Reserved]" : "";
-            return `  [${b.id}] ${b.company} ${b.model} ${b.year} | ${b.km_covered.toLocaleString("en-IN")} km | RTO: ${b.rto_number} | Price: ${inr(b.display_price)} | Floor: ${inr(floorPrice(b.display_price))}${tag}`;
+            return `[${b.id}] ${b.company} ${b.model} ${b.year} | ${b.km_covered.toLocaleString("en-IN")} km | ${b.rto_number} | Ask:${inr(b.display_price)} | Floor:${inr(floorPrice(b.display_price))}${tag}`;
           })
           .join("\n")
-      : "  (Abhi koi bike available nahi hai)";
+      : "(No bikes available right now)";
 
   const currentCtx = currentBike
-    ? `\nCustomer is currently looking at: [${currentBike.id}] ${currentBike.company} ${currentBike.model} ${currentBike.year} | Price: ${inr(currentBike.display_price)} | Floor: ${inr(floorPrice(currentBike.display_price))}`
+    ? `\nCurrently discussing: [${currentBike.id}] ${currentBike.company} ${currentBike.model} ${currentBike.year} | Ask:${inr(currentBike.display_price)} | Floor:${inr(floorPrice(currentBike.display_price))}`
     : "";
 
-  return `IMPORTANT: You must respond with ONLY a valid JSON object. No plain text. No markdown. No explanation outside the JSON.
+  return `You are a sharp used-bike sales agent for ${STORE_NAME}, Buxar, Bihar.
+Reply in natural Hinglish. Short — 1 to 3 sentences max. Sound like a trusted local dealer.
+Owner: ${OWNER_PHONE} | Store: ${STORE_ADDRESS} | Hours: 8 AM–7 PM
 
-Required JSON format:
-{"reply":"<message>","bike_id":"<id or null>","action":"<none|send_photos|send_video|create_lead|escalate>","interested":<true|false>}
-
----
-
-Tum Ankit Motors Buxar ke sales executive ho — ek sharp, experienced used-bike dealer Bihar se.
-Tum Hinglish mein baat karte ho — natural, warm, direct. Bilkul waise jaise ek trusted local dealer baat karta hai jo bikes ko inside-out jaanta ho.
-
-STORE INFO:
-  Naam: ${STORE_NAME}
-  Address: ${STORE_ADDRESS}
-  Owner contact: ${OWNER_PHONE}
-  Timing: 8 AM – 7 PM, Roz
-
-LIVE INVENTORY (Sold bikes already removed — yahi available hai):
+INVENTORY (these are the ONLY bikes that exist — do NOT mention any other bike):
 ${bikeLines}
 ${currentCtx}
 
-NEGOTIATION RULES:
-  - "Price" = customer ko dikhaya jaane wala price.
-  - "Floor" = tumhara hard minimum. Customer ko kabhi bhi Floor reveal mat karo. Kabhi bhi neeche mat jaao.
-  - Negotiation steps: pehle price hold karo → ek chhoti concession do → doosri push pe aur thoda → teen pushes ke baad Floor pe final karo.
-  - Floor se neeche customer offer kare to refuse karo bina floor reveal kiye: "Sir itne mein mushkil hai."
+RULES:
+- ONLY discuss bikes from the inventory above. Never invent or mention a bike not listed.
+- Sell the customer's chosen bike first. Alternatives only if: not in stock, customer rejects, budget too low, or customer asks.
+- Never reveal Floor price. Never go below it. If customer asks for less than Floor: "Sir itna possible nahi hai."
+- Negotiation: hold first → small step → final = Floor (after 2-3 pushes).
+- Move every conversation toward visit/call/lead. Ask one question at a time.
+- Bihar check is already done. Do not ask again.
+- For RC/documents/ownership questions → escalate to owner.
 
-SALES RULES (strict):
-  1. Customer ki CHOSEN bike PEHLE sell karo. Alternatives = last resort, not first move.
-  2. Pehli objection pe bike mat chhodna — handle karo.
-  3. Alternatives sirf tab suggest karo jab: (a) bike hai hi nahi, (b) customer reject kare, (c) budget kaafi kaafi kam ho, (d) customer khud maange.
-  4. Har response ko action ki taraf le jaao: visit, call, ya lead.
-  5. Bihar verification pehle ho chuki hai — dobara mat poochho.
-  6. Ek baar mein sirf ek question poochho.
+RESPOND WITH ONLY A JSON OBJECT (no other text):
+{"reply":"...","bike_id":"<exact id from inventory or null>","action":"<none|send_photos|send_video|create_lead|escalate>","interested":<true|false>}
 
-RESPONSE STYLE:
-  - 1–3 chhote sentences. No lectures. No corporate-speak.
-  - "Sir" naturally use karo.
-  - Emojis sparingly — sirf jab genuinely fits.
-  - Avoid repeating what customer just said.
-
-ACTION FIELD GUIDE:
-  none         → sirf reply bhejo
-  send_photos  → customer ne photo manga, ya bike present karte waqt photos bhi bhejo
-  send_video   → customer ne video manga
-  create_lead  → strong purchase intent (le lunga / booking / visit / showroom kahan) — lead banao
-  escalate     → RC / documents / ownership / service history ke repeated sawaal, ya negotiation stuck ho
-
-EXAMPLES:
-
-Customer: "Apache hai?"
-→ { "reply": "Ji sir, Apache RTR 160 available hai.\\n\\n• Year: 2022\\n• KM: 15,000\\n• Price: ₹85,000\\n\\nBahut acchi sporty bike hai — pickup kaafi solid hai. Photo dikhaun?", "bike_id": "<apache_id>", "action": "none", "interested": true }
-
-Customer: "Photo dikhao"
-→ { "reply": "Photos bhej raha hoon sir 📸", "bike_id": "<id>", "action": "send_photos", "interested": true }
-
-Customer: "Price bahut zyada hai"
-→ { "reply": "Samajh sakta hoon sir. Aapka roughly kitna budget hai?", "bike_id": "<id>", "action": "none", "interested": true }
-
-Customer: "80k mein milegi?"
-(if 80k >= Floor) → { "reply": "Sir 80k mein final kar sakte hain. Kab aana chahenge?", "bike_id": "<id>", "action": "none", "interested": true }
-(if 80k < Floor)  → { "reply": "Sir 80k mein thoda mushkil hai. Best jo kar sakte hain woh ₹84,000 hai — pakka deal hoga.", "bike_id": "<id>", "action": "none", "interested": true }
-
-Customer: "RC clear hai? Documents sahi hain?"
-→ { "reply": "Sir RC aur documents ke baare mein Ankit ji se directly baat karna best rahega.\\nNumber: ${OWNER_PHONE}", "bike_id": "<id>", "action": "escalate", "interested": true }
-
-Customer: "Le lunga, showroom kahan hai?"
-→ { "reply": "Bahut badhiya sir! 🙌\\n\\n${STORE_NAME}\\n${STORE_ADDRESS}\\nContact: ${OWNER_PHONE}\\n\\nAane se pehle ek call kar lena — bike ready rakhenge.", "bike_id": "<id>", "action": "create_lead", "interested": true }
-
-Customer: "Koi aur bike hai?"
-→ { "reply": "Haan sir, aur bhi options hain. Aapko sporty chahiye ya mileage wali?", "bike_id": null, "action": "none", "interested": true }`;
+action guide:
+  none = just send reply
+  send_photos = customer asked for photos or you are presenting a bike
+  send_video = customer asked for video
+  create_lead = customer shows strong intent (le lunga / visit / booking / showroom kahan)
+  escalate = RC/documents/ownership repeated questions or negotiation stuck`;
 }
 
 // ─── Media senders ────────────────────────────────────────────────────────────
@@ -267,7 +237,6 @@ export async function handleVerifiedMessage(
   negotiationProgress?: string | null;
   media?: { url: string; type: "image" | "video" }[];
 }> {
-  // Fetch inventory and history in parallel (history now includes the already-logged customer message)
   const [inventory, history] = await Promise.all([getInventory(), getHistory(phone)]);
 
   const currentBike = currentBikeId
@@ -276,31 +245,22 @@ export async function handleVerifiedMessage(
 
   const systemPrompt = buildSystemPrompt(inventory, currentBike);
 
-  const llmMessages: Array<{ role: "user" | "assistant"; content: string }> =
-    history.map((h) => ({
+  const llmMessages: Array<{ role: "user" | "assistant"; content: string }> = history.map(
+    (h) => ({
       role: (h.sender === "customer" ? "user" : "assistant") as "user" | "assistant",
       content: h.message,
-    }));
+    }),
+  );
 
-  console.log(`[llm-agent] messages: ${llmMessages.length}, last role: ${llmMessages.at(-1)?.role}, last: "${llmMessages.at(-1)?.content.slice(0, 80)}"`);
+  console.log(
+    `[llm-agent] msgs:${llmMessages.length} last_role:${llmMessages.at(-1)?.role} last:"${llmMessages.at(-1)?.content.slice(0, 60)}"`,
+  );
 
   let agentRes: AgentResponse;
   try {
-    const { text } = await generateText({
-      model: getModel(),
-      system: systemPrompt,
-      messages: llmMessages,
-      temperature: 0.35,
-      maxTokens: 500,
-    });
-
-    console.log("[llm-agent] raw response:", text.slice(0, 200));
-
-    // Extract the JSON object from the response — handles markdown fences,
-    // leading/trailing text, and other model formatting quirks.
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error(`No JSON in response: ${text.slice(0, 100)}`);
-    agentRes = JSON.parse(jsonMatch[0]) as AgentResponse;
+    const text = await callOpenAI(systemPrompt, llmMessages);
+    console.log("[llm-agent] response:", text.slice(0, 200));
+    agentRes = JSON.parse(text) as AgentResponse;
   } catch (err) {
     console.error("[llm-agent] error:", err);
     agentRes = {
@@ -313,15 +273,12 @@ export async function handleVerifiedMessage(
 
   const { reply, bike_id, action, interested } = agentRes;
 
-  // Resolve the bike the LLM is talking about
   const resolvedBike = bike_id
     ? (inventory.find((b) => b.id === bike_id) ?? currentBike)
     : currentBike;
 
-  // 1. Send the text reply
   await sendWhatsAppText(phone, reply);
 
-  // 2. Execute the action
   const mediaOut: { url: string; type: "image" | "video" }[] = [];
 
   if (action === "send_photos" && resolvedBike) {
@@ -338,7 +295,7 @@ export async function handleVerifiedMessage(
     reply,
     newBikeId: resolvedBike?.id ?? null,
     interested: interested || action === "create_lead",
-    negotiationProgress: null, // LLM manages negotiation through conversation history
+    negotiationProgress: null,
     media: mediaOut.length > 0 ? mediaOut : undefined,
   };
 }
