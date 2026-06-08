@@ -3,7 +3,7 @@
 
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { sendWhatsAppText } from "./meta.server";
-import { handleVerifiedMessage } from "./inventory-ai.server";
+import { handleVerifiedMessage } from "./llm-sales-agent.server";
 
 
 export const BIHAR_PROMPT = `Namaste.
@@ -105,6 +105,9 @@ export async function handleIncomingMessage(
   media?: { url: string; type: "image" | "video" }[];
 }> {
   const state = await getOrCreateState(phone);
+
+  // Log every inbound customer message so the LLM has full history.
+  await logMessage(phone, "customer", message);
 
   // Bihar qualification must be the first interaction.
   if (!state.state_verified) {
