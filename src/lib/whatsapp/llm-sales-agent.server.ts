@@ -5,12 +5,26 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { sendWhatsAppText, sendWhatsAppMedia } from "./meta.server";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { generateText } from "ai";
+import { generateObject } from "ai";
+import { z } from "zod";
 
 const OWNER_PHONE = "7050959444";
 const STORE_NAME = "Ankit Motors Buxar";
 const STORE_ADDRESS = "Ahirauli, Buxar, Bihar";
 const MAX_DISCOUNT = 0.03; // 3% max off display price
+
+// ─── Response schema (enforced by generateObject — no manual JSON parsing) ────
+
+const AgentResponseSchema = z.object({
+  reply: z.string().describe("WhatsApp message in Hindi/Hinglish, 1-3 sentences"),
+  bike_id: z.string().nullable().describe("Exact bike ID from inventory, or null"),
+  action: z
+    .enum(["none", "send_photos", "send_video", "create_lead", "escalate"])
+    .describe("Action to execute after sending the reply"),
+  interested: z.boolean().describe("Whether customer showed purchase interest"),
+});
+
+type AgentResponse = z.infer<typeof AgentResponseSchema>;
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -28,13 +42,6 @@ interface BikeRow {
 interface DbConversation {
   sender: "customer" | "bot";
   message: string;
-}
-
-interface AgentResponse {
-  reply: string;
-  bike_id: string | null;
-  action: "none" | "send_photos" | "send_video" | "create_lead" | "escalate";
-  interested: boolean;
 }
 
 // ─── LLM client ──────────────────────────────────────────────────────────────
@@ -131,17 +138,9 @@ RESPONSE STYLE:
   - Emojis sparingly — sirf jab genuinely fits.
   - Avoid repeating what customer just said.
 
-RESPOND IN STRICT JSON (no markdown fences, no extra text outside the JSON):
-{
-  "reply": "<WhatsApp message — Hindi/Hinglish, conversational>",
-  "bike_id": "<exact bike ID from inventory above, or null>",
-  "action": "<none|send_photos|send_video|create_lead|escalate>",
-  "interested": <true|false>
-}
-
-ACTION MEANINGS:
+ACTION FIELD GUIDE:
   none         → sirf reply bhejo
-  send_photos  → customer ne photo manga ya bike dikhate waqt automatically photos bhejo
+  send_photos  → customer ne photo manga, ya bike present karte waqt photos bhi bhejo
   send_video   → customer ne video manga
   create_lead  → strong purchase intent (le lunga / booking / visit / showroom kahan) — lead banao
   escalate     → RC / documents / ownership / service history ke repeated sawaal, ya negotiation stuck ho
@@ -281,22 +280,15 @@ export async function handleVerifiedMessage(
 
   let agentRes: AgentResponse;
   try {
-    const { text } = await generateText({
+    const { object } = await generateObject({
       model: getModel(),
+      schema: AgentResponseSchema,
       system,
       messages: llmMessages,
       temperature: 0.35,
-      maxTokens: 450,
+      maxTokens: 500,
     });
-
-    // Strip markdown code fences if model wraps the JSON
-    const clean = text
-      .trim()
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```$/, "")
-      .trim();
-
-    agentRes = JSON.parse(clean) as AgentResponse;
+    agentRes = object;
   } catch (err) {
     console.error("[llm-agent] error:", err);
     agentRes = {

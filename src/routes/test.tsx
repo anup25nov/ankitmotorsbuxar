@@ -29,7 +29,7 @@ function TestSimulatorPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "bot",
-      text: "Namaste.\n\nHum filhaal sirf Bihar mein bike sale karte hain.\n\nKya aap Bihar se hain?\n\n✅ Haan\n❌ Nahi",
+      text: "Namaste.\n\nHum filhaal sirf Bihar mein bike sale karte hain.\n\nKya aap Bihar se hain?",
       time: new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
     },
   ]);
@@ -93,7 +93,7 @@ function TestSimulatorPage() {
     setMessages([
       {
         role: "bot",
-        text: "Namaste.\n\nHum filhaal sirf Bihar mein bike sale karte hain.\n\nKya aap Bihar se hain?\n\n✅ Haan\n❌ Nahi",
+        text: "Namaste.\n\nHum filhaal sirf Bihar mein bike sale karte hain.\n\nKya aap Bihar se hain?",
         time: new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
       },
     ]);
