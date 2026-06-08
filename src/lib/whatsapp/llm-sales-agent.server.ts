@@ -127,6 +127,8 @@ ${currentCtx}
 
 RULES:
 - ONLY discuss bikes from the inventory above. Never invent or mention a bike not listed.
+- Every bike in the inventory HAS photos available. When presenting a bike OR when customer asks for photo, always set action to send_photos.
+- Videos may also be available. If customer asks for video, set action to send_video.
 - Sell the customer's chosen bike first. Alternatives only if: not in stock, customer rejects, budget too low, or customer asks.
 - Never reveal Floor price. Never go below it. If customer asks for less than Floor: "Sir itna possible nahi hai."
 - Negotiation: hold first → small step → final = Floor (after 2-3 pushes).
@@ -135,11 +137,11 @@ RULES:
 - For RC/documents/ownership questions → escalate to owner.
 
 RESPOND WITH ONLY A JSON OBJECT (no other text):
-{"reply":"...","bike_id":"<exact id from inventory or null>","action":"<none|send_photos|send_video|create_lead|escalate>","interested":<true|false>}
+{"reply":"...","bike_id":"<exact id from inventory, or JSON null (not the string null)>","action":"<none|send_photos|send_video|create_lead|escalate>","interested":<true|false>}
 
 action guide:
   none = just send reply
-  send_photos = customer asked for photos or you are presenting a bike
+  send_photos = presenting a bike for first time OR customer asked for photo — ALWAYS use this when showing a bike
   send_video = customer asked for video
   create_lead = customer shows strong intent (le lunga / visit / booking / showroom kahan)
   escalate = RC/documents/ownership repeated questions or negotiation stuck`;
@@ -273,8 +275,10 @@ export async function handleVerifiedMessage(
 
   const { reply, bike_id, action, interested } = agentRes;
 
-  const resolvedBike = bike_id
-    ? (inventory.find((b) => b.id === bike_id) ?? currentBike)
+  // Guard against model returning the string "null" instead of JSON null
+  const resolvedBikeId = bike_id === "null" || bike_id === "" ? null : bike_id;
+  const resolvedBike = resolvedBikeId
+    ? (inventory.find((b) => b.id === resolvedBikeId) ?? currentBike)
     : currentBike;
 
   await sendWhatsAppText(phone, reply);
