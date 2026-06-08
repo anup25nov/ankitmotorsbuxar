@@ -37,28 +37,50 @@ function normalize(text: string): string {
   return text.trim().toLowerCase();
 }
 
+function words(t: string): Set<string> {
+  return new Set(t.split(/[\s,।.!?]+/).filter(Boolean));
+}
+
 function isAffirmative(text: string): boolean {
   const t = normalize(text);
+  const w = words(t);
+
+  // Safe substring checks — these strings won't appear inside unrelated words
+  if (t.includes("✅")) return true;
+  if (t.includes("haan")) return true;   // "haan" won't appear inside bike names
+  if (t.includes("bihar")) return true;  // any Bihar mention = confirmed
+  if (t.includes("bilkul")) return true;
+  if (t.includes("ji han")) return true;
+  if (t.includes("haan ji")) return true;
+
+  // Word-level only — these are single chars/short tokens that appear inside other words
   return (
-    t.includes("✅") ||
-    t.includes("haan") ||
-    t.includes("haa") ||
-    t.includes("ha") ||
-    t === "yes" ||
-    t.includes("yes") ||
-    t.includes("y")
+    t === "1" ||
+    w.has("haa") ||
+    w.has("ha") ||
+    w.has("han") ||
+    w.has("yes") ||
+    w.has("y") ||
+    w.has("ok") ||
+    w.has("okay") ||
+    w.has("theek") ||
+    w.has("thik")
   );
 }
 
 function isNegative(text: string): boolean {
   const t = normalize(text);
-  return (
-    t.includes("❌") ||
-    t.includes("nahi") ||
-    t.includes("nai") ||
-    t === "no" ||
-    t.includes("no")
-  );
+  const w = words(t);
+
+  // Safe substring checks
+  if (t.includes("❌")) return true;
+  if (t.includes("nahi")) return true;
+  if (t.includes("nai")) return true;
+  if (t.includes("nhi")) return true;
+  if (t.includes("nahin")) return true;
+
+  // Word-level only
+  return t === "2" || w.has("no") || w.has("nope");
 }
 
 async function getOrCreateState(

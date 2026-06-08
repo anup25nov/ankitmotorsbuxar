@@ -89,15 +89,26 @@ async function getInventory(): Promise<BikeRow[]> {
   return (data ?? []) as BikeRow[];
 }
 
+// Messages from the Bihar gate phase that are pure noise for the sales LLM.
+const BIHAR_GATE_NOISE = new Set([
+  "Namaste.\n\nHum filhaal sirf Bihar mein bike sale karte hain.\n\nKya aap Bihar se hain?\n\n✅ Haan\n❌ Nahi",
+  "Sorry, currently we sell bikes only within Bihar.\n\nThank you for your interest.",
+  "Bahut badhiya! 🙌\n\nAap kis bike mein interested hain? Company ya model ka naam bhejiye.",
+]);
+
 async function getHistory(phone: string): Promise<DbConversation[]> {
-  // Fetch newest 16 messages (DESC) then reverse → always has the latest customer message.
+  // Fetch newest 12 messages (DESC) then reverse → always ends with the latest customer message.
+  // 12 is enough for recent negotiation context — long-term memory lives in conversation_state.
   const { data } = await supabaseAdmin
     .from("conversations")
     .select("sender, message")
     .eq("phone_number", phone)
     .order("created_at", { ascending: false })
-    .limit(16);
-  return ((data ?? []) as DbConversation[]).reverse();
+    .limit(12);
+
+  return ((data ?? []) as DbConversation[])
+    .reverse()
+    .filter((m) => !BIHAR_GATE_NOISE.has(m.message)); // strip qualification noise
 }
 
 // ─── System prompt ────────────────────────────────────────────────────────────
