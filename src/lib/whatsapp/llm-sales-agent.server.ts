@@ -271,24 +271,31 @@ export async function handleVerifiedMessage(
     ? (inventory.find((b) => b.id === currentBikeId) ?? null)
     : null;
 
-  const system = buildSystemPrompt(inventory, currentBike);
+  const systemPrompt = buildSystemPrompt(inventory, currentBike);
 
-  // Build LLM message thread from stored history
-  const llmMessages: Array<{ role: "user" | "assistant"; content: string }> =
-    history.map((h) => ({
+  // Inject system prompt as the first message — @ai-sdk/openai-compatible does not
+  // reliably forward the separate `system` parameter to the API, so we embed it
+  // directly in the messages array which is always sent correctly.
+  const llmMessages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+    { role: "system", content: systemPrompt },
+    ...history.map((h) => ({
       role: (h.sender === "customer" ? "user" : "assistant") as "user" | "assistant",
       content: h.message,
-    }));
+    })),
+  ];
+
+  console.log(`[llm-agent] calling model, messages: ${llmMessages.length}, last: ${llmMessages.at(-1)?.content.slice(0, 60)}`);
 
   let agentRes: AgentResponse;
   try {
     const { text } = await generateText({
       model: getModel(),
-      system,
       messages: llmMessages,
       temperature: 0.35,
       maxTokens: 500,
     });
+
+    console.log("[llm-agent] raw response:", text.slice(0, 200));
 
     // Extract the JSON object from the response — handles markdown fences,
     // leading/trailing text, and other model formatting quirks.
