@@ -74,13 +74,16 @@ async function getInventory(): Promise<BikeRow[]> {
 }
 
 async function getHistory(phone: string): Promise<DbConversation[]> {
+  // Fetch newest 20 messages first (DESC), then reverse to chronological order.
+  // Using ASC + LIMIT fetched the oldest messages and cut off the customer's
+  // latest message when the conversation grew past the limit.
   const { data } = await supabaseAdmin
     .from("conversations")
     .select("sender, message")
     .eq("phone_number", phone)
-    .order("created_at", { ascending: true })
-    .limit(24);
-  return (data ?? []) as DbConversation[];
+    .order("created_at", { ascending: false })
+    .limit(20);
+  return ((data ?? []) as DbConversation[]).reverse();
 }
 
 // ─── System prompt ────────────────────────────────────────────────────────────
@@ -273,23 +276,19 @@ export async function handleVerifiedMessage(
 
   const systemPrompt = buildSystemPrompt(inventory, currentBike);
 
-  // Inject system prompt as the first message — @ai-sdk/openai-compatible does not
-  // reliably forward the separate `system` parameter to the API, so we embed it
-  // directly in the messages array which is always sent correctly.
-  const llmMessages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
-    { role: "system", content: systemPrompt },
-    ...history.map((h) => ({
+  const llmMessages: Array<{ role: "user" | "assistant"; content: string }> =
+    history.map((h) => ({
       role: (h.sender === "customer" ? "user" : "assistant") as "user" | "assistant",
       content: h.message,
-    })),
-  ];
+    }));
 
-  console.log(`[llm-agent] calling model, messages: ${llmMessages.length}, last: ${llmMessages.at(-1)?.content.slice(0, 60)}`);
+  console.log(`[llm-agent] messages: ${llmMessages.length}, last role: ${llmMessages.at(-1)?.role}, last: "${llmMessages.at(-1)?.content.slice(0, 80)}"`);
 
   let agentRes: AgentResponse;
   try {
     const { text } = await generateText({
       model: getModel(),
+      system: systemPrompt,
       messages: llmMessages,
       temperature: 0.35,
       maxTokens: 500,
