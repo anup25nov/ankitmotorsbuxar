@@ -49,6 +49,7 @@ export type Database = {
       bikes: {
         Row: {
           company: string
+          condition_notes: string | null
           created_at: string
           display_price: number
           id: string
@@ -62,6 +63,7 @@ export type Database = {
         }
         Insert: {
           company: string
+          condition_notes?: string | null
           created_at?: string
           display_price: number
           id?: string
@@ -75,6 +77,7 @@ export type Database = {
         }
         Update: {
           company?: string
+          condition_notes?: string | null
           created_at?: string
           display_price?: number
           id?: string
@@ -90,34 +93,46 @@ export type Database = {
       }
       conversation_state: {
         Row: {
+          budget: number | null
           created_at: string
           current_bike_id: string | null
           id: string
           interested: boolean
+          last_summary: string | null
           negotiation_progress: string | null
           phone_number: string
+          preferred_brands: string | null
           state_verified: boolean
           updated_at: string
+          usage_type: string | null
         }
         Insert: {
+          budget?: number | null
           created_at?: string
           current_bike_id?: string | null
           id?: string
           interested?: boolean
+          last_summary?: string | null
           negotiation_progress?: string | null
           phone_number: string
+          preferred_brands?: string | null
           state_verified?: boolean
           updated_at?: string
+          usage_type?: string | null
         }
         Update: {
+          budget?: number | null
           created_at?: string
           current_bike_id?: string | null
           id?: string
           interested?: boolean
+          last_summary?: string | null
           negotiation_progress?: string | null
           phone_number?: string
+          preferred_brands?: string | null
           state_verified?: boolean
           updated_at?: string
+          usage_type?: string | null
         }
         Relationships: []
       }

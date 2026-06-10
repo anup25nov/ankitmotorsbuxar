@@ -108,6 +108,11 @@ interface ConversationState {
   current_bike_id: string | null;
   negotiation_progress: string | null;
   interested: boolean;
+  budget: number | null;
+  preferred_brands: string | null;
+  usage_type: string | null;
+  last_summary: string | null;
+  updated_at: string;
 }
 
 async function getOrCreateState(phone: string): Promise<ConversationState> {
@@ -191,19 +196,33 @@ export async function handleIncomingMessage(
     message,
     state.current_bike_id,
     state.negotiation_progress,
+    {
+      budget: state.budget,
+      preferred_brands: state.preferred_brands,
+      usage_type: state.usage_type,
+      last_summary: state.last_summary,
+      days_since_last_active: state.updated_at
+        ? Math.floor((Date.now() - new Date(state.updated_at).getTime()) / 86_400_000)
+        : null,
+    },
   );
   await logMessage(phone, "bot", result.reply);
 
-  // Persist any state updates from the LLM agent
-  const updates: {
-    current_bike_id?: string | null;
-    interested?: boolean;
-    negotiation_progress?: string | null;
-  } = {};
+  // Persist state + customer memory updates from the LLM agent
+  const updates: Record<string, unknown> = {};
   if (result.newBikeId !== undefined) updates.current_bike_id = result.newBikeId;
   if (result.interested) updates.interested = true;
   if (result.negotiationProgress !== undefined)
     updates.negotiation_progress = result.negotiationProgress;
+
+  // Merge customer memory updates (budget, summary, etc.)
+  if (result.customerMemoryUpdate) {
+    const mem = result.customerMemoryUpdate;
+    if (mem.last_summary) updates.last_summary = mem.last_summary;
+    if (mem.budget) updates.budget = mem.budget;
+    if (mem.preferred_brands) updates.preferred_brands = mem.preferred_brands;
+    if (mem.usage_type) updates.usage_type = mem.usage_type;
+  }
 
   if (Object.keys(updates).length > 0) {
     await supabaseAdmin

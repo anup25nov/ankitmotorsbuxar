@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -29,6 +30,7 @@ export function BikeForm({ initial, submitting, submitLabel, onSubmit }: Props) 
     rto_number: initial?.rto_number ?? "",
     display_price: initial?.display_price ?? 0,
     negotiation_percentage: initial?.negotiation_percentage ?? 3,
+    condition_notes: initial?.condition_notes ?? null,
     status: (initial?.status as BikeStatus) ?? "Available",
   });
 
@@ -94,6 +96,14 @@ export function BikeForm({ initial, submitting, submitLabel, onSubmit }: Props) 
           max={100}
           value={v.negotiation_percentage}
           onChange={(e) => set("negotiation_percentage", Number(e.target.value))}
+        />
+      </Field>
+      <Field label="Condition Notes">
+        <Textarea
+          value={v.condition_notes ?? ""}
+          onChange={(e) => set("condition_notes", e.target.value || null)}
+          placeholder="New tyres, recently serviced, single owner, all papers clear..."
+          rows={2}
         />
       </Field>
       <Field label="Status">
