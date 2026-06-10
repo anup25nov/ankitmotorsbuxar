@@ -246,7 +246,8 @@ STEP 2 — RECOMMEND & PITCH (show ONE bike at a time):
   - <15k km → "Bahut kam chali hai, almost new jaisi"
   - 15k-30k km → "Normal use hai, engine bilkul fit"
   - >30k km → "Kaafi chali hai lekin well-maintained, price bhi accordingly low hai"
-* PHOTOS: When presenting a bike, JUST SEND photos — set action: send_photos. Do NOT ask "photo bhej doon?". Just say "Photo bhej raha hoon, dekh lo" and set the action. Customers see, customers buy.
+* PHOTOS: When presenting a bike FOR THE FIRST TIME, send photos — set action: send_photos. Say "Photo bhej raha hoon, dekh lo" and set the action.
+* Do NOT send photos again for the same bike in follow-up messages. If you already sent photos earlier in this conversation, don't set send_photos again. Only resend if customer explicitly asks "photo bhejo".
 * If they reject → understand WHY, then suggest the next best. Don't repeat same bike.
 * When redirecting from unavailable model → CONNECT to what they wanted: "Bullet ka feel chahiye toh Ronin 225 mein wohi heavy ride milegi" — don't just list alternatives like a catalogue.
 
@@ -652,11 +653,25 @@ export async function handleVerifiedMessage(
   const mediaOut: { url: string; type: "image" | "video" }[] = [];
 
   if (action === "send_photos" && resolvedBike) {
-    const urls = await sendBikePhotos(phone, resolvedBike.id);
-    urls.forEach((u) => mediaOut.push({ url: u, type: "image" }));
+    // Skip if photos were already sent for this exact bike in this conversation
+    // (same bike as before AND customer didn't explicitly ask for photos)
+    const customerAskedForPhotos = /photo|pic|foto|tasveer|dikha|dekhna|image/i.test(_message);
+    const alreadySentForThisBike = currentBikeId === resolvedBike.id;
+    if (!alreadySentForThisBike || customerAskedForPhotos) {
+      const urls = await sendBikePhotos(phone, resolvedBike.id);
+      urls.forEach((u) => mediaOut.push({ url: u, type: "image" }));
+    } else {
+      console.log(`[llm-agent] skipping duplicate photo send for bike ${resolvedBike.id}`);
+    }
   } else if (action === "send_video" && resolvedBike) {
-    const url = await sendBikeVideo(phone, resolvedBike.id);
-    if (url) mediaOut.push({ url, type: "video" });
+    const customerAskedForVideo = /video|vid/i.test(_message);
+    const alreadySentForThisBike = currentBikeId === resolvedBike.id;
+    if (!alreadySentForThisBike || customerAskedForVideo) {
+      const url = await sendBikeVideo(phone, resolvedBike.id);
+      if (url) mediaOut.push({ url, type: "video" });
+    } else {
+      console.log(`[llm-agent] skipping duplicate video send for bike ${resolvedBike.id}`);
+    }
   } else if (action === "create_lead" && resolvedBike) {
     await upsertLead(phone, resolvedBike, history);
   }
