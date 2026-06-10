@@ -103,17 +103,32 @@ function floorPrice(bike: BikeRow): number {
 // ─── Data fetchers ────────────────────────────────────────────────────────────
 
 async function getInventory(): Promise<BikeRow[]> {
-  const { data } = await supabaseAdmin
+  // Try with condition_notes first; fall back without it if the column doesn't exist yet.
+  let { data, error } = await supabaseAdmin
     .from("bikes")
     .select("id, company, model, year, km_covered, rto_number, display_price, negotiation_percentage, condition_notes, status, created_at")
     .neq("status", "Sold")
     .order("display_price", { ascending: true });
+
+  if (error) {
+    console.warn("[inventory] query with condition_notes failed, retrying without:", error.message);
+    const fallback = await supabaseAdmin
+      .from("bikes")
+      .select("id, company, model, year, km_covered, rto_number, display_price, negotiation_percentage, status, created_at")
+      .neq("status", "Sold")
+      .order("display_price", { ascending: true });
+    data = fallback.data;
+    if (fallback.error) {
+      console.error("[inventory] fallback query also failed:", fallback.error.message);
+    }
+  }
+
   return (data ?? []) as BikeRow[];
 }
 
 // Count active leads and media per bike — used for real FOMO signals and media availability.
 async function getBikeSignals(): Promise<Map<string, BikeSignals>> {
-  const [{ data: leads }, { data: media }] = await Promise.all([
+  const [leadsRes, mediaRes] = await Promise.all([
     supabaseAdmin
       .from("leads")
       .select("bike_id")
@@ -122,6 +137,10 @@ async function getBikeSignals(): Promise<Map<string, BikeSignals>> {
       .from("bike_media")
       .select("bike_id, media_type"),
   ]);
+  if (leadsRes.error) console.warn("[signals] leads query failed:", leadsRes.error.message);
+  if (mediaRes.error) console.warn("[signals] media query failed:", mediaRes.error.message);
+  const leads = leadsRes.data;
+  const media = mediaRes.data;
 
   const signals = new Map<string, BikeSignals>();
   const getOrInit = (id: string) => {
