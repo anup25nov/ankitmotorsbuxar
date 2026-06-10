@@ -22,6 +22,7 @@ interface BikeRow {
   rto_number: string;
   display_price: number;
   negotiation_percentage: number;
+  color: string | null;
   condition_notes: string | null;
   status: string;
   created_at: string;
@@ -106,12 +107,12 @@ async function getInventory(): Promise<BikeRow[]> {
   // Try with condition_notes first; fall back without it if the column doesn't exist yet.
   let { data, error } = await supabaseAdmin
     .from("bikes")
-    .select("id, company, model, year, km_covered, rto_number, display_price, negotiation_percentage, condition_notes, status, created_at")
+    .select("id, company, model, year, km_covered, rto_number, display_price, negotiation_percentage, color, condition_notes, status, created_at")
     .neq("status", "Sold")
     .order("display_price", { ascending: true });
 
   if (error) {
-    console.warn("[inventory] query with condition_notes failed, retrying without:", error.message);
+    console.warn("[inventory] query with new columns failed, retrying without:", error.message);
     const fallback = await supabaseAdmin
       .from("bikes")
       .select("id, company, model, year, km_covered, rto_number, display_price, negotiation_percentage, status, created_at")
@@ -437,8 +438,11 @@ DO NOT re-ask anything already known above. Use this context to pick up where yo
               b.km_covered < 15000 ? "low-use" : b.km_covered < 30000 ? "normal-use" : "well-used";
             const age = daysAgo(b.created_at);
             const ageLabel = age <= 2 ? "NEW" : age <= 7 ? `${age}d ago` : `${age}d`;
+            const nameWithColor = b.color
+              ? `[${b.id}] ${b.company} ${b.model} ${b.year} (${b.color})`
+              : `[${b.id}] ${b.company} ${b.model} ${b.year}`;
             const parts = [
-              `[${b.id}] ${b.company} ${b.model} ${b.year}`,
+              nameWithColor,
               `${b.km_covered.toLocaleString("en-IN")} km (${kmLabel})`,
               `Ask:${inr(b.display_price)} Floor:${inr(floorPrice(b))}`,
               `Listed:${ageLabel}`,

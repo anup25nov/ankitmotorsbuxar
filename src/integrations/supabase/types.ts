@@ -48,6 +48,7 @@ export type Database = {
       }
       bikes: {
         Row: {
+          color: string | null
           company: string
           condition_notes: string | null
           created_at: string
@@ -62,6 +63,7 @@ export type Database = {
           year: number
         }
         Insert: {
+          color?: string | null
           company: string
           condition_notes?: string | null
           created_at?: string
@@ -76,6 +78,7 @@ export type Database = {
           year: number
         }
         Update: {
+          color?: string | null
           company?: string
           condition_notes?: string | null
           created_at?: string

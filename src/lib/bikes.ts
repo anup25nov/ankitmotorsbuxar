@@ -12,6 +12,7 @@ export interface Bike {
   rto_number: string;
   display_price: number;
   negotiation_percentage: number;
+  color: string | null;
   condition_notes: string | null;
   status: BikeStatus;
   created_at: string;

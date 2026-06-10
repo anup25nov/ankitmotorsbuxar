@@ -30,6 +30,7 @@ export function BikeForm({ initial, submitting, submitLabel, onSubmit }: Props) 
     rto_number: initial?.rto_number ?? "",
     display_price: initial?.display_price ?? 0,
     negotiation_percentage: initial?.negotiation_percentage ?? 3,
+    color: initial?.color ?? null,
     condition_notes: initial?.condition_notes ?? null,
     status: (initial?.status as BikeStatus) ?? "Available",
   });
@@ -96,6 +97,13 @@ export function BikeForm({ initial, submitting, submitLabel, onSubmit }: Props) 
           max={100}
           value={v.negotiation_percentage}
           onChange={(e) => set("negotiation_percentage", Number(e.target.value))}
+        />
+      </Field>
+      <Field label="Color">
+        <Input
+          value={v.color ?? ""}
+          onChange={(e) => set("color", e.target.value || null)}
+          placeholder="Red, Black, Blue..."
         />
       </Field>
       <Field label="Condition Notes">
