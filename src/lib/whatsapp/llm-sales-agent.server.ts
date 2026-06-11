@@ -142,6 +142,7 @@ async function getBikeSignals(): Promise<Map<string, BikeSignals>> {
   if (mediaRes.error) console.warn("[signals] media query failed:", mediaRes.error.message);
   const leads = leadsRes.data;
   const media = mediaRes.data;
+  console.log(`[signals] bike_media rows: ${media?.length ?? 0}`, JSON.stringify(media?.slice(0, 10)));
 
   const signals = new Map<string, BikeSignals>();
   const getOrInit = (id: string) => {
@@ -648,6 +649,7 @@ export async function handleVerifiedMessage(
   }
 
   const { reply, bike_id, action, interested, budget_mentioned, customer_summary } = agentRes;
+  console.log(`[llm-agent] action:${action} bike_id:${bike_id} currentBikeId:${currentBikeId}`);
 
   // Guard against model returning the string "null" instead of JSON null
   const resolvedBikeId = bike_id === "null" || bike_id === "" ? null : bike_id;
