@@ -138,6 +138,31 @@ async function logMessage(phone: string, sender: "customer" | "bot", message: st
   await supabaseAdmin.from("conversations").insert({ phone_number: phone, sender, message });
 }
 
+// ─── Debounce for rapid-fire messages ─────────────────────────────────────────
+// Customers often send 2-3 messages quickly ("Kya hua" + "Bhejo"). On serverless
+// (Lovable/Cloudflare), setTimeout after returning 200 won't fire — the worker
+// dies. So we debounce inline: log to DB → sleep → check if a newer customer
+// message arrived. If yes, this handler silently exits and the newest handler
+// will process the full batch (it sees all messages in history).
+const DEBOUNCE_MS = Number(process.env.WHATSAPP_DEBOUNCE_MS) || 5000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function isLatestCustomerMessage(phone: string, message: string): Promise<boolean> {
+  const { data } = await supabaseAdmin
+    .from("conversations")
+    .select("message")
+    .eq("phone_number", phone)
+    .eq("sender", "customer")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  return data?.message === message;
+}
+
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
 export async function handleIncomingMessage(
@@ -162,6 +187,7 @@ export async function handleIncomingMessage(
   await logMessage(phone, "customer", message);
 
   // ── GATE 2: Bihar qualification ──────────────────────────────────────────────
+  // Bihar gate is deterministic + instant — no debounce needed.
   if (!state.state_verified) {
     if (isNegative(message)) {
       // Mark as permanently rejected so future messages get a hard stop
@@ -188,6 +214,17 @@ export async function handleIncomingMessage(
     await sendWhatsAppText(phone, BIHAR_PROMPT);
     await logMessage(phone, "bot", BIHAR_PROMPT);
     return { reply: BIHAR_PROMPT, stateVerified: false };
+  }
+
+  // ── DEBOUNCE: wait for rapid follow-up messages ─────────────────────────────
+  // Sleep, then check if a newer customer message arrived while we waited.
+  // If yes → this handler exits silently; the newer handler will process all.
+  // If no → we're the latest, proceed with LLM (history includes all messages).
+  await sleep(DEBOUNCE_MS);
+  const stillLatest = await isLatestCustomerMessage(phone, message);
+  if (!stillLatest) {
+    console.log(`[engine] debounce: newer message exists for ${phone}, skipping`);
+    return { reply: null, stateVerified: true };
   }
 
   // ── VERIFIED: Hand off to LLM sales agent ───────────────────────────────────

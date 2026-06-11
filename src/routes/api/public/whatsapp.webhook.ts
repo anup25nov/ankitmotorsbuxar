@@ -5,57 +5,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { handleIncomingMessage } from "@/lib/whatsapp/conversation-engine.server";
 
-// ─── Per-phone debounce ──────────────────────────────────────────────────────
-// When a customer sends 2-3 messages quickly ("Kya hua" + "Bhejo"), Meta fires
-// separate webhook calls. Instead of processing each independently (duplicate
-// replies) or serially (wasted LLM calls), we buffer them and combine into one
-// message after a short quiet period. One combined message → one LLM call → one
-// reply. Much more natural.
-const DEBOUNCE_MS = Number(process.env.WHATSAPP_DEBOUNCE_MS) || 5000;
-
-interface PendingBatch {
-  texts: string[];
-  timer: ReturnType<typeof setTimeout>;
-}
-
-const pendingMessages = new Map<string, PendingBatch>();
-
-function debounceMessage(phone: string, text: string): void {
-  const existing = pendingMessages.get(phone);
-
-  if (existing) {
-    // Another message from same phone within the window — add to batch, reset timer
-    existing.texts.push(text);
-    clearTimeout(existing.timer);
-    existing.timer = setTimeout(() => flushPhone(phone), DEBOUNCE_MS);
-  } else {
-    // First message — start a new batch
-    const batch: PendingBatch = {
-      texts: [text],
-      timer: setTimeout(() => flushPhone(phone), DEBOUNCE_MS),
-    };
-    pendingMessages.set(phone, batch);
-  }
-}
-
-async function flushPhone(phone: string): Promise<void> {
-  const batch = pendingMessages.get(phone);
-  if (!batch) return;
-  pendingMessages.delete(phone);
-
-  // Combine multiple fragments into one message (join with newline)
-  const combined = batch.texts.join("\n");
-  console.log(
-    `[webhook] processing ${batch.texts.length} message(s) for ${phone}: "${combined.slice(0, 80)}"`,
-  );
-
-  try {
-    await handleIncomingMessage(phone, combined);
-  } catch (err) {
-    console.error("[webhook] processing error for", phone, err);
-  }
-}
-
 /**
  * Extract the sender phone and text body from the Meta WhatsApp Cloud API
  * webhook payload (and also handles older AiSensy-style payloads as a fallback).
@@ -197,11 +146,14 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
           return Response.json({ ok: true, ignored: true });
         }
 
-        // Buffer the message and return 200 immediately — Meta requires fast acks.
-        // The debounce timer will combine rapid-fire messages from the same phone
-        // into one and process after a 1.5s quiet window.
-        debounceMessage(parsed.phone, parsed.text);
-        return Response.json({ ok: true });
+        try {
+          const result = await handleIncomingMessage(parsed.phone, parsed.text);
+          return Response.json({ ok: true, ...result });
+        } catch (err) {
+          console.error("[whatsapp webhook] processing error", err);
+          // Still return 200 so Meta doesn't retry the same message in a loop.
+          return Response.json({ ok: false, error: "internal" }, { status: 200 });
+        }
       },
     },
   },
