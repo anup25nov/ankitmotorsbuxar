@@ -75,7 +75,7 @@ async function callOpenAI(
       model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
       response_format: { type: "json_object" }, // guaranteed JSON output
       temperature: 0.3,
-      max_tokens: 500,
+      max_tokens: 300,
       messages: [{ role: "system", content: systemPrompt }, ...messages],
     }),
   });
@@ -347,7 +347,11 @@ TONE & STYLE
 * Emojis naturally — max 2 per message, vary which ones you use. Many messages should have ZERO emojis.
 * "Sir"/"Bhai" kabhi kabhi — har line mein nahi
 * Bihar flavor: "bilkul pakka", "ek dum sahi", "aa jaao", "koi tension nahi", "chhodo yaar", "arre bhai"
-* Max 3–4 lines for most replies. Only longer for a detailed bike pitch. Shorter = more human.
+* REPLY LENGTH — THIS IS CRITICAL:
+  - Most replies: 1–2 lines. Like a real WhatsApp text.
+  - Bike pitch (first time showing a bike): max 3–4 lines.
+  - NEVER exceed 4 lines. If your reply is longer, cut it. A real person doesn't write paragraphs on WhatsApp.
+  - One idea per message. Don't pack price + specs + condition + invitation into one blob.
 
 ════════════════════════════════════════
 WHATSAPP FORMATTING
@@ -653,23 +657,48 @@ export async function handleVerifiedMessage(
 
   // Guard against model returning the string "null" instead of JSON null
   const resolvedBikeId = bike_id === "null" || bike_id === "" ? null : bike_id;
-  const resolvedBike = resolvedBikeId
+
+  // Fallback: if LLM forgot to set bike_id, try to resolve from reply text
+  let resolvedBike = resolvedBikeId
     ? (inventory.find((b) => b.id === resolvedBikeId) ?? currentBike)
-    : currentBike;
+    : null;
+  if (!resolvedBike) {
+    // Match LLM's reply against inventory names. The LLM copies exact names from
+    // its system prompt, so spelling is reliable. Use word-based matching so
+    // "Apache" matches even if DB model is "Apache RTR 160".
+    const replyWords = new Set(reply.toLowerCase().split(/[\s,.*()₹\d]+/).filter(Boolean));
+    const modelMatchScore = (b: BikeRow): number => {
+      const words = `${b.company} ${b.model}`.toLowerCase().split(/\s+/);
+      return words.filter((w) => replyWords.has(w)).length;
+    };
+    const bestMatch = inventory
+      .filter((b) => modelMatchScore(b) >= 2) // at least company + model first word
+      .sort((a, b) => modelMatchScore(b) - modelMatchScore(a))[0];
+    resolvedBike = bestMatch ?? currentBike;
+    if (resolvedBike && resolvedBike !== currentBike) {
+      console.log(`[llm-agent] resolved bike from reply text: ${resolvedBike.company} ${resolvedBike.model} [${resolvedBike.id}]`);
+    }
+  }
 
   await sendWhatsAppText(phone, reply);
 
   const mediaOut: { url: string; type: "image" | "video" }[] = [];
 
-  if (action === "send_photos" && resolvedBike) {
-    // Trust the LLM's decision — it sees the full conversation history and knows
-    // whether photos were already sent. The per-phone webhook queue prevents
-    // concurrent duplicate sends from rapid-fire messages.
-    const urls = await sendBikePhotos(phone, resolvedBike.id);
-    if (urls.length > 0) {
-      urls.forEach((u) => mediaOut.push({ url: u, type: "image" }));
-    } else {
-      // LLM promised photos but bike has none — send honest follow-up
+  // Auto-send photos when a NEW bike is introduced (LLM is unreliable about
+  // setting action:send_photos). Also send when LLM explicitly requests it.
+  const isNewBike = resolvedBike && resolvedBike.id !== currentBikeId;
+  const shouldSendPhotos = action === "send_photos" || isNewBike;
+
+  if (shouldSendPhotos && resolvedBike) {
+    const s = signals.get(resolvedBike.id);
+    if (s && s.photos > 0) {
+      console.log(`[llm-agent] sending photos for ${resolvedBike.company} ${resolvedBike.model} (auto:${isNewBike} action:${action})`);
+      const urls = await sendBikePhotos(phone, resolvedBike.id);
+      if (urls.length > 0) {
+        urls.forEach((u) => mediaOut.push({ url: u, type: "image" }));
+      }
+    } else if (action === "send_photos") {
+      // LLM explicitly asked to send photos but bike has none
       await sendWhatsAppText(phone, "Abhi iska photo available nahi hai. Aap aa ke dekh lo, bike ready hai dukan pe.");
     }
   } else if (action === "send_video" && resolvedBike) {
