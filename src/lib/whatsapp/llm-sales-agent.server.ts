@@ -660,33 +660,22 @@ export async function handleVerifiedMessage(
   const mediaOut: { url: string; type: "image" | "video" }[] = [];
 
   if (action === "send_photos" && resolvedBike) {
-    // Skip if photos were already sent for this exact bike in this conversation
-    // (same bike as before AND customer didn't explicitly ask for photos)
-    const customerAskedForPhotos = /photo|pic|foto|tasveer|dikha|dekhna|image/i.test(_message);
-    const alreadySentForThisBike = currentBikeId === resolvedBike.id;
-    if (!alreadySentForThisBike || customerAskedForPhotos) {
-      const urls = await sendBikePhotos(phone, resolvedBike.id);
-      if (urls.length > 0) {
-        urls.forEach((u) => mediaOut.push({ url: u, type: "image" }));
-      } else {
-        // LLM promised photos but bike has none — send honest follow-up
-        await sendWhatsAppText(phone, "Abhi iska photo available nahi hai. Aap aa ke dekh lo, bike ready hai dukan pe.");
-      }
+    // Trust the LLM's decision — it sees the full conversation history and knows
+    // whether photos were already sent. The per-phone webhook queue prevents
+    // concurrent duplicate sends from rapid-fire messages.
+    const urls = await sendBikePhotos(phone, resolvedBike.id);
+    if (urls.length > 0) {
+      urls.forEach((u) => mediaOut.push({ url: u, type: "image" }));
     } else {
-      console.log(`[llm-agent] skipping duplicate photo send for bike ${resolvedBike.id}`);
+      // LLM promised photos but bike has none — send honest follow-up
+      await sendWhatsAppText(phone, "Abhi iska photo available nahi hai. Aap aa ke dekh lo, bike ready hai dukan pe.");
     }
   } else if (action === "send_video" && resolvedBike) {
-    const customerAskedForVideo = /video|vid/i.test(_message);
-    const alreadySentForThisBike = currentBikeId === resolvedBike.id;
-    if (!alreadySentForThisBike || customerAskedForVideo) {
-      const url = await sendBikeVideo(phone, resolvedBike.id);
-      if (url) {
-        mediaOut.push({ url, type: "video" });
-      } else {
-        await sendWhatsAppText(phone, "Video abhi available nahi hai. Photo dekhna ho toh bata do.");
-      }
+    const url = await sendBikeVideo(phone, resolvedBike.id);
+    if (url) {
+      mediaOut.push({ url, type: "video" });
     } else {
-      console.log(`[llm-agent] skipping duplicate video send for bike ${resolvedBike.id}`);
+      await sendWhatsAppText(phone, "Video abhi available nahi hai. Photo dekhna ho toh bata do.");
     }
   } else if (action === "create_lead" && resolvedBike) {
     await upsertLead(phone, resolvedBike, history);
