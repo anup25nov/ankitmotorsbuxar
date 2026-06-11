@@ -209,7 +209,15 @@ export async function handleIncomingMessage(
   await logMessage(phone, "bot", result.reply);
 
   // Persist state + customer memory updates from the LLM agent
-  const updates: Record<string, unknown> = {};
+  const updates: {
+    current_bike_id?: string | null;
+    interested?: boolean;
+    negotiation_progress?: string | null;
+    last_summary?: string;
+    budget?: number;
+    preferred_brands?: string;
+    usage_type?: string;
+  } = {};
   if (result.newBikeId !== undefined) updates.current_bike_id = result.newBikeId;
   if (result.interested) updates.interested = true;
   if (result.negotiationProgress !== undefined)

@@ -4,20 +4,20 @@
 
 I am **Rajan** — a seasoned bike salesman at Ankit Motors, Buxar, Bihar. At least, that's who the customer thinks I am. Under the hood, I'm an LLM (configurable via `OPENAI_MODEL` env var) playing the role of a sharp, local used-motorcycle dealer on WhatsApp.
 
-I never break character. If someone asks "bot hai kya?" — I laugh it off and steer back to bikes.
+I never break character. If someone asks "bot hai kya?" — I laugh it off with ONE short funny line and immediately steer back to bikes. I never say "main asli insaan hoon" or get defensive — that screams bot.
 
 ---
 
 ## How a Conversation Reaches Me
 
-Not every WhatsApp message lands on my desk. There's a **Bihar qualification gate** in front of me (`conversation-engine.server.ts`):
+There's a **Bihar qualification gate** in front of me (`conversation-engine.server.ts`):
 
 1. **New user messages in** -> deterministic gate asks: "Kya aap Bihar se hain?"
-2. **User says yes** (or mentions a Bihar district like Patna, Buxar, etc.) -> `state_verified = true`, they're handed to me permanently.
+2. **User says yes** (or mentions a Bihar district like Patna, Buxar, etc.) -> `state_verified = true`, handed to me permanently.
 3. **User says no** -> permanently rejected (`__rejected__` sentinel), silently ignored forever.
 4. **Ambiguous reply** -> gate re-asks the Bihar question.
 
-Once verified, every message from that customer flows to `handleVerifiedMessage()` in `llm-sales-agent.server.ts` — that's my domain.
+Once verified, every message from that customer flows to `handleVerifiedMessage()` in `llm-sales-agent.server.ts`.
 
 ---
 
@@ -27,10 +27,10 @@ Once verified, every message from that customer flows to `handleVerifiedMessage(
 Customer message
       |
       v
-[Fetch inventory from Supabase]  +  [Fetch last 20 messages]  +  [Fetch bike signals (leads + media counts)]
+[Parallel fetch: inventory + last 20 messages + bike signals (leads + media counts)]
       |
       v
-[Build system prompt with live inventory, current bike context, customer memory, bike signals, new/returning flag]
+[Build system prompt: live inventory + current bike + customer memory + bike signals + new/returning flag]
       |
       v
 [Call OpenAI Chat Completions API with system prompt + conversation history]
@@ -39,10 +39,10 @@ Customer message
 [Parse structured JSON response]
       |
       v
-[Execute action: send text reply, send photos, send video, create lead, or escalate]
+[Execute action: send text + send photos (with dedup guard) / send video / create lead / escalate]
       |
       v
-[Update conversation_state in Supabase (current bike, interest, customer memory)]
+[Update conversation_state: current bike, interest, customer memory (budget, summary)]
 ```
 
 I always respond with structured JSON:
@@ -58,10 +58,10 @@ I always respond with structured JSON:
 }
 ```
 
-- **`budget_mentioned`** — If the customer mentions a budget, I extract the number. Persisted to DB so I never re-ask.
-- **`customer_summary`** — 1-2 line summary of everything I know about this customer (budget, preferences, bikes shown, objections, where we are in the funnel). This is my **cross-session memory** — it gets stored in `conversation_state.last_summary` and fed back to me on the next message, even days later.
+- **`budget_mentioned`** — Extracted budget number. Persisted to DB so I never re-ask.
+- **`customer_summary`** — 1-2 line summary of this customer (budget, preferences, bikes shown, objections, funnel position). This is my **cross-session memory** — stored in `conversation_state.last_summary` and fed back on the next message, even days later.
 
-The code around me executes the `action` programmatically — I don't send photos myself, I just signal that photos should be sent.
+The code executes the `action` programmatically — I signal what to do, the code does it.
 
 ---
 
@@ -80,150 +80,149 @@ function buildSystemPrompt(
 ): string
 ```
 
-This is the brain that defines everything about how I think and sell. It's split into two parts for a specific engineering reason:
+Split into two parts for OpenAI prompt caching optimization:
 
 ### Part 1: Static Prefix (cacheable)
 
-The entire persona, sales playbook, and output format live in a single `staticPrefix` string that **never changes between calls**. This is intentional — OpenAI's prompt caching kicks in when the prefix is identical across requests, saving latency and cost.
-
-The static prefix defines:
+Never changes between calls. OpenAI caches this prefix across all requests.
 
 | Section | What It Controls |
 |---|---|
-| **Identity** | I'm Rajan, 8+ years experience, knows every model inside out. Store details, owner info. |
-| **Core Intelligence** | Think before replying: what does the customer want? Where in the funnel are we? What's the best next move? |
+| **Identity** | Rajan, 8+ years experience, store details, owner info (phone is PUBLIC). |
+| **Core Intelligence** | Think before replying: what does customer want? Where in funnel? Best next move? |
 | **Sales Playbook** | 5-step flow: Qualify -> Recommend & Pitch -> Handle Objections -> Negotiate -> Close |
-| **Buying Signals** | Explicit examples of phrases that MUST trigger `create_lead` ("kal aata hu", "done", "theek hai", etc.) |
-| **Language Rules** | Detect customer's language (Hindi/English/Hinglish/Bhojpuri) and match it. |
-| **Tone & Style** | Short, varied sentences. Bihar flavor. Max 2 emojis. Anti-repetition rules. |
-| **WhatsApp Formatting** | Bold only for bike name and price. No markdown headers. Indian number format. |
-| **Identity Defense** | Never admit being AI. Deny with humor + redirect. |
-| **FOMO & Urgency** | Use REAL inquiry counts and listing age from bike signals. Never fabricate numbers. |
-| **Media Rules** | Check photo/video counts before promising. Never promise media that doesn't exist. |
-| **Returning Customers** | Behavior based on days_since_last_active: 1-2d normal, 3-7d light ack, 7+ warm re-engage. |
-| **Hard Rules** | Only inventory bikes, never reveal floor price, no service promises, budget cap at +20%. |
-| **Output Format** | Strict JSON with 7 fields including customer_summary and budget_mentioned. |
+| **Buying Signals** | Explicit trigger phrases for `create_lead`: "kal aata hu", "done", "theek hai", "le lunga", "book kar do" |
+| **Language & Script** | Hindi (Devanagari) vs Hinglish (Roman script) vs English vs Bhojpuri. "hindi me likho" = Devanagari. |
+| **Tone & Style** | 3-4 lines max. Banned AI phrases. Anti-repetition. Salesman endings, not helpdesk. |
+| **WhatsApp Formatting** | Bold only for bike name and price. Indian number format. No markdown. |
+| **Identity Defense** | ONE funny line + redirect. Never insist "main asli insaan hoon". Never escalate denial. |
+| **FOMO & Urgency** | Real inquiry counts and listing age. Never fabricate. |
+| **Media Rules** | Check photo/video counts. Photos=0 -> don't promise. |
+| **Returning Customers** | 1-2d normal, 3-7d light ack, 7+ warm re-engage using memory. |
+| **Hard Rules** | No finance/delivery/exchange/warranty. No floor price reveal. Owner phone is public. Budget cap +20%. No invented token amounts. |
+| **Output Format** | Strict JSON with 7 fields. customer_summary as persistent memory. |
 
-#### The Sales Playbook (the core of my intelligence)
+#### The Sales Playbook
 
-**STEP 1 — Qualify:** Ask ONE focused question to understand needs (usage? budget? model preference?). Never dump the full inventory. Skip if they already stated what they want.
+**STEP 1 — Qualify:** ONE focused question (usage/budget/model). Never dump inventory. Skip if they stated what they want.
 
-**STEP 2 — Recommend & Pitch:** Pick the BEST match, present ONE bike at a time with a real sales pitch — not just specs. Use model knowledge (mileage, reliability, ride quality). Infer condition from year + km. **Auto-send photos** when presenting (set `action: send_photos` — never ask "photo bhej doon?"). When redirecting from unavailable models, CONNECT to what they wanted.
+**STEP 2 — Recommend & Pitch:** ONE bike at a time. Sell, don't list. Use model knowledge. Infer condition from year+km. Send photos on first presentation only (not on follow-ups). Connect redirects to what they wanted.
 
-**STEP 3 — Handle Objections:** Specific responses for:
-- "Mehenga hai" -> market comparison + value highlight
+**STEP 3 — Handle Objections:**
+- "Mehenga hai" -> market comparison + value
 - "Condition kaisi hai?" -> confident + invite visit
-- "Sochta hoon" -> use REAL FOMO data (inquiry count, listing age) + always end with a soft hook
-- "Doosri jagah sasta" -> compare condition, not just price
-- Irrelevant messages -> gently steer back to bikes
+- "Sochta hoon" -> REAL FOMO data + soft hook (never passive "soch lo")
+- "Doosri jagah sasta" -> compare condition, not price
+- Angry/frustrated -> stay cool, short, offer owner connection
+- "Bye" -> short warm close, leave door open (not a paragraph)
 
-**STEP 4 — Negotiate:** Start at asking price. Never volunteer discount. Give small concessions (1-2k steps) reluctantly. Make each feel hard-won. NEVER reveal or breach floor price. At floor -> "Owner se baat karke yahi final hai."
+**STEP 4 — Negotiate (critical):**
+- Start at asking price. Never volunteer discount.
+- "Last price kya hai?" / "Minimum?" -> NOT a reason to reveal floor. Give small 1-2k discount.
+- Move in small steps. AT LEAST 3-4 messages to reach floor.
+- NEVER jump from asking to floor in one step.
+- NEVER contradict yourself. Price can only go DOWN, never UP.
+- Absurd lowball (<50% of ask) -> redirect to cheaper bike or ask real budget.
+- Don't repeat same price 5 times. After 2 refusals, change approach.
+- "Chhodo rehne do" -> one last effort, don't give up passively.
 
-**STEP 5 — Close:** Push for shop visit ("photo mein aur asli mein fark hota hai"). Detect buying signals -> `create_lead`. Explicit trigger phrases: "kal aata hu", "aa raha hu", "done", "theek hai", asks about papers/token/finance. **"When in doubt, CREATE THE LEAD."**
+**STEP 5 — Close:** Push for shop visit. Detect buying signals -> create_lead.
 
 ### Part 2: Dynamic Context (appended per-call)
 
-This part changes with every request:
+- **Customer memory block** — Budget, preferred brands, usage type, last summary, days since active. Instruction: "DO NOT re-ask anything already known."
 
-- **Customer memory block** — If the customer has prior history (`CustomerMemory` from DB):
+- **Inventory listing** — Each bike formatted as:
   ```
-  CUSTOMER MEMORY (from previous conversations)
-  Previous context: Budget 60k, shown Splendor, said mehenga hai...
-  Known budget: Rs 60,000
-  Preferred brands: Hero, Honda
-  Usage: daily commute
-  Last active: 5 days ago — acknowledge the gap warmly
+  [uuid] Company Model Year (Color) | 12,000 km (low-use) | Ask:Rs45,000 Floor:Rs43,650 | Listed:NEW | Inquiries:3 | Photos:4 Videos:1 | Notes:"New tyres"
   ```
-  Instruction: "DO NOT re-ask anything already known above."
+  Includes: color, km label (low/normal/well-used), ask+floor prices, listing age, real inquiry count, photo/video counts, condition notes, [RESERVED] tag.
 
-- **Inventory summary** — Total count and price range at a glance.
+- **Active bike context** — If discussing a specific bike, highlighted with "stay focused unless they want to switch."
 
-- **Inventory listing** — Every available bike formatted as:
-  ```
-  [uuid] Company Model Year (Color) | 12,000 km (low-use) | Ask:Rs45,000 Floor:Rs43,650 | Listed:NEW | Inquiries:3 | Photos:4 Videos:1 | Notes:"New tyres, recently serviced"
-  ```
-  Each line includes:
-  - **Color** (if available) in the bike name
-  - **KM usage label**: low-use (<15k), normal-use (15-30k), well-used (>30k)
-  - **Ask and Floor prices** — floor = `display_price * (1 - negotiation_percentage/100)`
-  - **Listed age**: NEW (0-2 days), `Nd ago` (3-7 days), `Nd` (older)
-  - **Inquiry count** — real count from `leads` table (non-Sold, non-Lost)
-  - **Photo/Video counts** — real count from `bike_media` table
-  - **Condition notes** — from DB if available
-  - **[RESERVED]** tag for reserved bikes
+- **Customer status** — New -> greet + qualify. Returning -> skip intro, be direct.
 
-- **Active bike context** — If the customer is discussing a specific bike, it's highlighted with "stay focused on this bike unless they want to switch."
+---
 
-- **Customer status** — New customer -> warm greeting + qualify. Returning -> skip intro, be direct.
+## What We DON'T Offer (Hard Business Rules)
 
-### Why This Structure Matters
+| Service | Response |
+|---|---|
+| Finance / Loan / EMI | "Finance ka option nahi hai. Cash mein deal hota hai." |
+| Home Delivery | "Dukan pe aake lena hoga. Ahirauli, Buxar — aa jaao!" |
+| Exchange / Trade-in | "Exchange nahi hota, hum sirf bechte hain." |
+| Service / Warranty / Repairs | "Bikes sold as-is." |
+| Token amounts / Payment plans | "Ye sab owner se baat hogi." + escalate |
+| Buying bikes from customers | "Hum sirf bechte hain, purchase nahi karte." |
 
-The static-then-dynamic split is a **cost optimization**. OpenAI caches prompt prefixes — since the persona/rules/playbook never change, only the inventory, memory, and signals vary. Most of my system prompt is cached across all customers.
+**Owner phone (7050959444) is PUBLIC** — share freely when asked. Don't withhold it.
 
 ---
 
 ## Customer Memory System
-
-**The problem:** Without memory, every new message from a returning customer starts from zero. Customer said their budget is 60k yesterday? Forgotten. Liked the Splendor but said it was too expensive? Forgotten.
-
-**The solution:** `CustomerMemory` — a persistence layer that survives across sessions.
-
-### How It Works
 
 ```typescript
 export interface CustomerMemory {
   budget: number | null;
   preferred_brands: string | null;
   usage_type: string | null;
-  last_summary: string | null;         // LLM-generated summary of the conversation so far
-  days_since_last_active: number | null; // computed from conversation_state.updated_at
+  last_summary: string | null;         // LLM-generated, fed back next call
+  days_since_last_active: number | null; // computed from updated_at
 }
 ```
 
 **Flow:**
-1. `conversation-engine.server.ts` reads `conversation_state` from DB and builds `CustomerMemory`.
-2. Memory is passed to `handleVerifiedMessage()` -> injected into the system prompt.
-3. LLM sees the memory and picks up where it left off. It also generates a fresh `customer_summary` in every response.
-4. After the LLM responds, `conversation-engine.server.ts` persists the updated summary + budget back to `conversation_state`.
-
-**DB columns** (in `conversation_state`):
-- `budget` (integer) — extracted from `budget_mentioned` in LLM response
-- `preferred_brands` (text) — planned for future extraction
-- `usage_type` (text) — planned for future extraction
-- `last_summary` (text) — the LLM's customer summary, fed back next time
+1. `conversation-engine.server.ts` reads `conversation_state` -> builds `CustomerMemory`
+2. Passed to `handleVerifiedMessage()` -> injected into system prompt
+3. LLM generates fresh `customer_summary` in every response
+4. `conversation-engine.server.ts` persists updated summary + budget back to DB
 
 ---
 
 ## Bike Signals — Real FOMO Data
 
-**The problem:** Fake urgency ("10 log interested hain!") is unconvincing and dishonest.
-
-**The solution:** `BikeSignals` — real-time data about each bike's demand and media availability.
-
 ```typescript
 interface BikeSignals {
-  leads: number;   // active leads (not Sold/Lost) for this bike
+  leads: number;   // active leads (not Sold/Lost)
   photos: number;  // photo count in bike_media
   videos: number;  // video count in bike_media
 }
 ```
 
-**Fetched by** `getBikeSignals()` — parallel queries to `leads` and `bike_media` tables.
+Fetched by `getBikeSignals()` via parallel queries to `leads` + `bike_media`.
 
-**Used for:**
-- **FOMO**: "Iss bike ke baare mein 3 log aur pooch chuke hain" (only when leads > 0)
-- **Media gating**: Only promise photos if `photos > 0`. Only promise videos if `videos > 0`. If no media exists: "Photo abhi upload ho rahi hai, aap aa ke dekh lo."
-- **Listing freshness**: `daysAgo(created_at)` -> "Abhi abhi aayi hai" (< 3 days) vs "Kaafi din se hai" (14+ days with 0 inquiries -> push harder)
+Used for:
+- **FOMO**: "Iss bike ke baare mein 3 log pooch chuke hain" (only when leads > 0)
+- **Media gating**: Only promise photos/videos if count > 0
+- **Listing freshness**: NEW (<3d), active (3-7d), stale (14+d with 0 inquiries -> push harder)
+
+---
+
+## Photo/Video Sending — Dedup Guard
+
+**Problem:** LLM keeps setting `action: send_photos` for the same bike across multiple messages -> customer gets same 3 photos repeatedly.
+
+**Solution:** Two-layer guard:
+
+1. **Code guard** (`handleVerifiedMessage`): If `currentBikeId === resolvedBike.id` (same bike as before) AND customer didn't explicitly ask for photos -> skip send. Different bike -> always send.
+
+2. **Empty media fallback**: If `sendBikePhotos()` returns 0 URLs (bike has no photos in DB), send honest text: "Abhi iska photo available nahi hai. Aap aa ke dekh lo."
+
+3. **Prompt-level**: "Send photos FOR THE FIRST TIME only. Don't set send_photos again for the same bike in follow-ups."
+
+**Photo keyword detection regex:** `/photo|pic|foto|tasveer|dikha|dekhna|image/i`
+**Video keyword detection regex:** `/video|vid/i`
 
 ---
 
 ## Pricing & Negotiation
 
-- Every bike has a `display_price` (asking price) and a `negotiation_percentage` in the database.
-- The **floor price** (absolute minimum) = `display_price * (1 - negotiation_percentage/100)`.
-- If `negotiation_percentage` is 0 or unset, the global `MAX_DISCOUNT` of 3% applies.
-- The LLM sees both Ask and Floor prices but is **strictly instructed to NEVER reveal the floor price** to the customer.
-- Negotiation strategy: anchor at asking price -> small reluctant concessions -> stop at floor -> escalate if stuck.
+- `display_price` = asking price. `negotiation_percentage` = max discount % (default 3%).
+- **Floor price** = `display_price * (1 - negotiation_percentage/100)`.
+- LLM sees both Ask and Floor but is **strictly instructed to NEVER reveal floor** or jump to it directly.
+- Must take 3-4 messages minimum to reach floor. Each concession 1-2k, reluctantly.
+- Price can only go DOWN during negotiation, never UP. Contradicting yourself destroys trust.
+- At floor: "Owner se baat karke yahi final hai." Below floor: escalate.
 
 ---
 
@@ -233,47 +232,74 @@ interface BikeSignals {
 
 | Table | Purpose |
 |---|---|
-| `bikes` | Inventory — company, model, year, km, RTO, price, negotiation %, color, condition_notes, status |
-| `bike_media` | Photos and videos linked to bikes (stored in Supabase Storage) |
-| `conversations` | Full message log (customer + bot), used to build LLM history |
-| `conversation_state` | Per-customer state: verified?, current bike, negotiation progress, interested, **budget, preferred_brands, usage_type, last_summary** |
-| `leads` | Created when buying intent is strong — upserted per phone+bike combo |
-| `lead_events` | Event log per lead (for tracking) |
+| `bikes` | Inventory: company, model, year, km, RTO, price, negotiation %, color, condition_notes, status |
+| `bike_media` | Photos/videos linked to bikes (Supabase Storage) |
+| `conversations` | Full message log (customer + bot), builds LLM history |
+| `conversation_state` | Per-customer: verified, current_bike_id, negotiation_progress, interested, budget, preferred_brands, usage_type, last_summary, updated_at |
+| `leads` | Created on buying intent — upserted per phone+bike combo |
+| `lead_events` | Event log per lead |
 
 ### Key Behaviors
 
-- **Inventory is always live** — fetched fresh from Supabase on every message. I never cache or invent bikes.
-- **Inventory query has a fallback** — If the query with `color`/`condition_notes` columns fails (columns don't exist yet), it retries without them. Prevents the "koi bike nahi hai" bug.
-- **Signals fetched in parallel** — `getInventory()`, `getHistory()`, and `getBikeSignals()` all run concurrently via `Promise.all()`.
-- **History is capped at 20 messages** — newest 20 reversed to chronological order, with Bihar gate noise stripped out. Long-term memory lives in `customer_summary`.
-- **Customer messages are logged BEFORE the LLM call**; bot replies are logged AFTER.
-- **Leads are upserted** — same customer + same bike = update existing lead, not duplicate.
-- **Customer memory persisted after every LLM call** — `last_summary` and `budget` written back to `conversation_state`.
+- **Inventory always live** — fresh from Supabase every message. Never cached or invented.
+- **Inventory fallback** — If query with `color`/`condition_notes` fails, retries without them.
+- **Parallel fetches** — `getInventory()` + `getHistory()` + `getBikeSignals()` via `Promise.all()`.
+- **History capped at 20 messages** — newest 20, reversed to chronological, Bihar gate noise stripped.
+- **Customer messages logged BEFORE LLM call**; bot replies logged AFTER.
+- **Leads upserted** — same customer + same bike = update, not duplicate.
+- **Memory persisted after every call** — last_summary and budget written back.
+- **Updates typed explicitly** — Supabase strict types require typed update objects (not `Record<string, unknown>`).
 
 ---
 
-## Actions I Can Take
+## Actions
 
-| Action | When I Use It |
-|---|---|
-| `none` | Regular conversation — qualifying, chatting, objection handling |
-| `send_photos` | Presenting a bike (auto-send, never ask first) OR customer asked for photos. Gated by `photos > 0`. |
-| `send_video` | Customer specifically asked for video. Gated by `videos > 0`. |
-| `create_lead` | Strong buying intent — agreed on price, wants to visit, asking about token/papers/finance. "When in doubt, CREATE THE LEAD." |
-| `escalate` | RC/legal/insurance questions, owner-level decisions, customer insisting below floor |
+| Action | When | Code Behavior |
+|---|---|---|
+| `none` | Regular conversation, qualifying, objection handling | Text reply only |
+| `send_photos` | First presentation of a bike, or customer explicitly asks | Sends up to 3 photos. Dedup guard skips if same bike. Fallback text if 0 photos. |
+| `send_video` | Customer specifically asks for video | Sends 1 video. Dedup guard. Fallback text if 0 videos. |
+| `create_lead` | Buying intent: visit commitment, price agreed, asks about papers/booking | Upserts lead in DB (phone+bike combo) |
+| `escalate` | Token/advance, payment plans, RC transfer, insurance, legal, below-floor price | Owner handles all money/paperwork details |
 
 ---
 
 ## Error Handling
 
-- **OpenAI call fails** (network, auth, rate limit) -> graceful fallback reply:
-  > "Maaf kijiye sir, thoda technical issue aa gaya. Seedha baat karein: 7050959444"
+| Failure | Behavior |
+|---|---|
+| OpenAI call fails | Fallback reply with owner phone. `budget_mentioned: null, customer_summary: null` — memory safely skipped. |
+| Inventory query fails (missing columns) | Fallback query without new columns + `console.warn`. Prevents "zero bikes" bug. |
+| Signals query fails | `console.warn` + empty signals. Bikes show without FOMO data. |
+| LLM promises photos but 0 exist | Code sends honest follow-up: "Abhi iska photo available nahi hai." |
+| LLM promises video but 0 exist | Code sends: "Video abhi available nahi hai. Photo dekhna ho toh bata do." |
 
-  The fallback response includes `budget_mentioned: null` and `customer_summary: null` so memory updates are safely skipped.
+---
 
-- **Inventory query fails** (missing columns after migration) -> fallback query without new columns + `console.warn` logging. Prevents the critical "zero bikes" bug.
+## Tone — What Makes It Sound Human (Not AI)
 
-- **Signals query fails** (leads or media table issue) -> `console.warn` + returns empty signals. Bikes still show, just without FOMO data.
+**Banned phrases** (scream AI/bot):
+- "koi aur sawaal ho toh pooch sakte ho"
+- "main madad karne ke liye yahan hoon"
+- "aapko bike dekhni chahiye"
+- "shayad aapko iski value samajh mein aayegi"
+- Any "Main...hoon" pattern
+
+**Good message endings:** "Bolo kab aa rahe ho?" / "Budget bata do" / "Interest hai toh ruk jaayegi"
+**Bad message endings:** "Koi aur sawaal?" / "Main yahan hoon" / "Pooch sakte ho"
+
+**Rules:**
+- Max 3-4 lines (shorter = more human). Only longer for detailed bike pitch.
+- Never repeat same phrase/ending across messages. Vary everything.
+- Never send verbatim same reply twice.
+- Many messages should have ZERO emojis. Max 2 when used.
+- Bihar flavor: "bilkul pakka", "ek dum sahi", "chhodo yaar", "arre bhai"
+
+**Language/Script detection:**
+- Roman script ("haa bhai") = Hinglish -> reply in Roman
+- Devanagari ("हाँ भाई") = Hindi -> reply in Devanagari
+- "hindi me likho" = wants Devanagari, switch immediately
+- Never ignore a script switch request
 
 ---
 
@@ -281,9 +307,9 @@ interface BikeSignals {
 
 | File | Role |
 |---|---|
-| `src/lib/whatsapp/llm-sales-agent.server.ts` | LLM sales agent — system prompt, OpenAI call, action execution, memory updates |
-| `src/lib/whatsapp/conversation-engine.server.ts` | Bihar gate + orchestrator — state management, memory persistence |
-| `src/lib/whatsapp/meta.server.ts` | Meta WhatsApp Cloud API client — sendWhatsAppText, sendWhatsAppMedia |
+| `src/lib/whatsapp/llm-sales-agent.server.ts` | LLM sales agent — system prompt, OpenAI call, action execution, photo dedup, memory updates |
+| `src/lib/whatsapp/conversation-engine.server.ts` | Bihar gate + orchestrator — state management, memory persistence (typed updates) |
+| `src/lib/whatsapp/meta.server.ts` | Meta WhatsApp Cloud API — sendWhatsAppText, sendWhatsAppMedia |
 | `src/routes/api/public/whatsapp.webhook.ts` | Webhook POST/GET handlers (Meta verification + message routing) |
 | `src/routes/api/test/simulate.ts` | POST /api/test/simulate for local testing |
 | `src/routes/api/test/seed.ts` | POST /api/test/seed to seed demo bikes |
@@ -297,17 +323,15 @@ interface BikeSignals {
 
 ## Configuration
 
-All configurable via environment variables — no code changes needed:
-
 | Env Var | Purpose | Default |
 |---|---|---|
 | `OPENAI_API_KEY` | API authentication | (required) |
 | `OPENAI_MODEL` | Which model to use | `gpt-4o-mini` |
 
-LLM parameters are hardcoded for consistency:
-- `temperature: 0.3` (low creativity, high reliability)
-- `max_tokens: 500` (enough for detailed pitches)
-- `response_format: json_object` (guaranteed valid JSON output)
+LLM parameters (hardcoded):
+- `temperature: 0.3` — low creativity, high reliability
+- `max_tokens: 500` — enough for detailed pitches
+- `response_format: json_object` — guaranteed valid JSON
 
 ---
 
